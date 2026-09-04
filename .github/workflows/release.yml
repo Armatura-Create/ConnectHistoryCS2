@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Тег для ручного релиза (например v2.1.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: test
+          MYSQL_DATABASE: ch
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -uroot -ptest --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Версия плагина берётся из тега — единственный источник правды.
+      # ModuleVersion читает её из метаданных сборки, руками нигде поднимать не нужно.
+      - name: Resolve version from tag
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          if [ -z "$VERSION" ]; then
+            echo "::error::не удалось вычислить версию из тега '$TAG'"
+            exit 1
+          fi
+          echo "PLUGIN_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Тег $TAG -> версия $VERSION"
+
+      - name: Restore
+        run: dotnet restore ConnectHistory.sln
+
+      - name: Build
+        run: dotnet build ConnectHistory.sln -c Release --no-restore -p:Version=$PLUGIN_VERSION
+
+      # Релиз не уезжает, если тесты красные
+      - name: Test
+        env:
+          CH_TEST_MYSQL: "server=127.0.0.1;port=3306;user=root;password=test;database=ch"
+        run: dotnet test tests/ConnectHistory.Tests/ConnectHistory.Tests.csproj -c Release --no-build --verbosity normal
+
+      # Свежие базы GeoLite2, если в репозитории задан секрет.
+      # Без секрета в архив попадут закоммиченные копии из GeoIP/.
+      - name: Package (Release)
+        env:
+          MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
+        run: dotnet build ConnectHistory.csproj -c Release --no-incremental -p:Version=$PLUGIN_VERSION
+
+      # В релиз уходит ТОЛЬКО полный архив — с базами GeoLite2 внутри.
+      # Архив без них выглядит рабочим до первого игрока, у которого не определилась страна.
+      - name: Verify artifact
+        run: |
+          set -euo pipefail
+          ZIP=bin/Release/net10.0/ConnectHistory.zip
+          PLUGIN_DIR=addons/counterstrikesharp/plugins/ConnectHistory
+          test -f "$ZIP" || { echo "::error::$ZIP не собран"; exit 1; }
+          unzip -l "$ZIP"
+
+          for required in \
+            "$PLUGIN_DIR/ConnectHistory.dll" \
+            "$PLUGIN_DIR/MySqlConnector.dll" \
+            "$PLUGIN_DIR/MaxMind.GeoIP2.dll" \
+            "$PLUGIN_DIR/GeoLite2-Country.mmdb" \
+            "$PLUGIN_DIR/GeoLite2-City.mmdb"
+          do
+            unzip -l "$ZIP" | grep -q -F "$required" \
+              || { echo "::error::в архиве нет $required"; exit 1; }
+          done
+
+          # Конфиг содержит пароль от базы и в релиз попадать не должен никогда
+          if unzip -l "$ZIP" | grep -q -F 'Settings.json'; then
+            echo "::error::в архиве оказался Settings.json — он содержит пароль"
+            exit 1
+          fi
+
+      # Плагин должен представляться серверу ровно той версией, что стоит в теге.
+      # ModuleVersion читает InformationalVersion, поэтому ищем её прямо в собранной DLL.
+      - name: Verify plugin version matches tag
+        run: |
+          set -euo pipefail
+          DLL=bin/Release/net10.0/ConnectHistory.dll
+          if grep -a -q -F "$PLUGIN_VERSION" "$DLL"; then
+            echo "OK: версия $PLUGIN_VERSION зашита в $DLL"
+          else
+            echo "::error::в $DLL нет версии $PLUGIN_VERSION — ModuleVersion уедет мимо тега"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: bin/Release/net10.0/ConnectHistory.zip
+          body: |
+            Требуются **CounterStrikeSharp >= 1.0.369** (.NET 10) и **MySQL 5.7 / 8.0+**.
+
+            Распакуйте архив в корень игрового сервера — структура
+            `addons/counterstrikesharp/plugins/ConnectHistory/` уже внутри,
+            вместе с базами GeoLite2.
+
+            Плагин сам создаст конфиги и таблицы при первом запуске: заполните секцию
+            `Database` в `Settings.json` и выполните `css_ch_reload`.
+
+            Схема базы и готовые запросы — `docs/DATABASE.md`,
+            модуль для панели Flute CMS — `docs/FLUTE_MODULE.md`.

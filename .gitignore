@@ -1,0 +1,42 @@
+# Build artifacts
+bin/
+obj/
+[Bb]uild/
+[Ll]og/
+*.log
+
+# Packaging staging (only needed during build)
+PackageRoot/
+**/PackageRoot/
+
+# Archives
+*.zip
+*.7z
+*.tar
+*.gz
+
+# IDE / tooling
+.vs/
+.idea/
+.fleet/
+_ReSharper.Caches/
+
+# User-specific settings
+*.user
+*.suo
+*.userprefs
+*.csproj.user
+*.DotSettings.user
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Secrets / local MSBuild overrides (MAXMIND_LICENSE_KEY)
+Directory.Build.props
+
+# Спул неотправленных записей — содержит ники и IP игроков
+pending-writes.jsonl
+
+# Граф кода: генерируется локально, в репозиторий не нужен
+graphify-out/

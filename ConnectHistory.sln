@@ -1,0 +1,22 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+Project("{9A19103F-16F7-404A-A3C7-0BB0BC96700D}") = "ConnectHistory", "ConnectHistory.csproj", "{1A2B3C4D-0001-4000-8000-000000000001}"
+EndProject
+Project("{9A19103F-16F7-404A-A3C7-0BB0BC96700D}") = "ConnectHistory.Tests", "tests\ConnectHistory.Tests\ConnectHistory.Tests.csproj", "{1A2B3C4D-0002-4000-8000-000000000002}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1A2B3C4D-0001-4000-8000-000000000001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1A2B3C4D-0001-4000-8000-000000000001}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1A2B3C4D-0001-4000-8000-000000000001}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1A2B3C4D-0001-4000-8000-000000000001}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1A2B3C4D-0002-4000-8000-000000000002}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1A2B3C4D-0002-4000-8000-000000000002}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1A2B3C4D-0002-4000-8000-000000000002}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1A2B3C4D-0002-4000-8000-000000000002}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
