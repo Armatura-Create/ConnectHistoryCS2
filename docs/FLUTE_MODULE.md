@@ -1,7 +1,7 @@
 # Модуль для Flute CMS
 
 Данные плагина показывает готовый модуль панели —
-**[ConnectHistoryFlute](https://github.com/Armatura-Create/ConnectHistoryFlute)**.
+**[ConnectHistory-Flute](https://github.com/Armatura-Create/ConnectHistory-Flute)**.
 Писать свой не нужно; этот документ объясняет, как их связать и почему связка
 устроена именно так.
 
@@ -12,7 +12,7 @@
 
 ## Установка
 
-1. Скачайте архив со [страницы релизов](https://github.com/Armatura-Create/ConnectHistoryFlute/releases)
+1. Скачайте архив со [страницы релизов](https://github.com/Armatura-Create/ConnectHistory-Flute/releases)
    и распакуйте в `app/Modules/` панели.
 2. Админ-панель → Модули → активировать **ConnectHistory**.
 3. Админ-панель → Серверы → нужный сервер → добавить подключение к базе,
@@ -61,7 +61,7 @@ GRANT SELECT ON connect_history.* TO 'ch_reader'@'%';
   стоимость страницы не должна зависеть от объёма накопленной истории.
 
 Разбор восьми ошибок, на которых сломался предыдущий модуль панели, —
-[docs/AUTOPSY.md](https://github.com/Armatura-Create/ConnectHistoryFlute/blob/main/docs/AUTOPSY.md)
+[docs/AUTOPSY.md](https://github.com/Armatura-Create/ConnectHistory-Flute/blob/main/docs/AUTOPSY.md)
 в репозитории модуля.
 
 ## Ссылки

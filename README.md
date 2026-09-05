@@ -68,6 +68,11 @@ Key options:
   "ServerId": 1,              // must differ between servers
   "DisplayTimeZone": "UTC",   // what players see: "Europe/Moscow", "UTC" or "Local".
                               // The database always stores UTC — this never affects it.
+  "Server": {
+    "PublicAddress": ""       // "ip:port" or "host:port". Empty means auto-detect, but
+                              // the server process does not know its own public address:
+                              // ConVar ip returns the socket bind address, usually 0.0.0.0.
+  },
   "Database": {
     "Host": "127.0.0.1",
     "SslMode": "Required",    // anything but localhost should use this
@@ -100,7 +105,11 @@ Six tables, all created by the plugin: `ch_sessions`, `ch_players`, `ch_nickname
 `ch_servers`, `ch_online_snapshots`, `ch_schema_version`.
 
 Full schema and a query cookbook: [docs/DATABASE.md](docs/DATABASE.md).
-Building a panel module: [docs/FLUTE_MODULE.md](docs/FLUTE_MODULE.md).
+
+A ready-made section for the Flute CMS panel —
+[ConnectHistory-Flute](https://github.com/Armatura-Create/ConnectHistory-Flute):
+online, statistics, filters and charts on top of these tables.
+How to wire it up — [docs/FLUTE_MODULE.md](docs/FLUTE_MODULE.md).
 
 Give the plugin its own MySQL user — it never needs `DROP` or `DELETE`:
 

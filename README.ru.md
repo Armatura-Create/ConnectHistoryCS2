@@ -69,6 +69,11 @@ addons/counterstrikesharp/plugins/ConnectHistory/
   "ServerId": 1,              // у разных серверов обязан отличаться
   "DisplayTimeZone": "UTC",   // что видят ИГРОКИ: "Europe/Moscow", "UTC" или "Local".
                               // В базе всегда UTC — на неё эта настройка не влияет.
+  "Server": {
+    "PublicAddress": ""       // "ip:port" или "host:port". Пусто — определить самому,
+                              // но процесс сервера своего публичного адреса не знает:
+                              // ConVar ip отдаёт адрес привязки сокета, обычно 0.0.0.0.
+  },
   "Database": {
     "Host": "127.0.0.1",
     "SslMode": "Required",    // для базы вне localhost — обязательно
@@ -101,7 +106,11 @@ addons/counterstrikesharp/plugins/ConnectHistory/
 `ch_servers`, `ch_online_snapshots`, `ch_schema_version`.
 
 Полная схема и готовые запросы: [docs/DATABASE.md](docs/DATABASE.md).
-Модуль для панели: [docs/FLUTE_MODULE.md](docs/FLUTE_MODULE.md).
+
+Готовый раздел для панели Flute CMS —
+[ConnectHistory-Flute](https://github.com/Armatura-Create/ConnectHistory-Flute):
+онлайн, статистика, фильтры и графики поверх этих таблиц.
+Как связать — [docs/FLUTE_MODULE.md](docs/FLUTE_MODULE.md).
 
 Заведите плагину отдельного пользователя MySQL — `DROP` и `DELETE` ему не нужны никогда:
 
