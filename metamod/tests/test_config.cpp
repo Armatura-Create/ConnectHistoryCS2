@@ -1,0 +1,227 @@
+// Конфиг правит человек руками на боевом сервере, и он ошибётся в запятой.
+// Битый файл не имеет права ронять плагин и не имеет права быть перезаписанным.
+#include "core/config.h"
+#include "core/logger.h"
+
+#include <nlohmann/json.hpp>
+
+#include "doctest.h"
+
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <sys/stat.h>
+#include <unistd.h>
+
+namespace {
+
+class TempDir {
+public:
+    TempDir() {
+        char pattern[] = "/tmp/ch_config_testXXXXXX";
+        const char* made = mkdtemp(pattern);
+        _path = made != nullptr ? made : "/tmp/ch_config_fallback";
+    }
+
+    ~TempDir() {
+        // Каталог одноразовый; аккуратная рекурсивная чистка тут не стоит кода
+        const std::string command = "rm -rf '" + _path + "'";
+        if (std::system(command.c_str()) != 0) { /* мусор в /tmp безвреден */ }
+    }
+
+    const std::string& Path() const { return _path; }
+    std::string File(const std::string& name) const { return _path + "/" + name; }
+
+private:
+    std::string _path;
+};
+
+bool Exists(const std::string& path) {
+    struct stat info;
+    return stat(path.c_str(), &info) == 0;
+}
+
+std::string Read(const std::string& path) {
+    std::ifstream stream(path.c_str(), std::ios::binary);
+    std::ostringstream buffer;
+    buffer << stream.rdbuf();
+    return buffer.str();
+}
+
+void Write(const std::string& path, const std::string& content) {
+    std::ofstream stream(path.c_str(), std::ios::binary | std::ios::trunc);
+    stream << content;
+}
+
+}  // namespace
+
+TEST_CASE("Первый запуск создаёт конфиги, схемы и README") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    const ch::Config config = service.LoadOrCreate(dir.Path());
+
+    CHECK(Exists(dir.File("Settings.json")));
+    CHECK(Exists(dir.File("Messages.json")));
+    CHECK(Exists(dir.File("Settings.schema.json")));
+    CHECK(Exists(dir.File("Messages.schema.json")));
+    CHECK(Exists(dir.File("README.txt")));
+
+    // Дефолты обезличены: первый запуск не должен ломиться в чужую базу
+    CHECK(config.database.user.empty());
+    CHECK(config.database.tablePrefix == "ch_");
+
+    // Пояс отображения обязан быть виден админу в файле, а не только в схеме
+    CHECK(config.displayTimeZone == "UTC");
+    CHECK(Read(dir.File("Settings.json")).find("\"DisplayTimeZone\"") != std::string::npos);
+
+    CHECK(service.FailedFiles().empty());
+}
+
+TEST_CASE("Сгенерированный конфиг ссылается на схему и остаётся читаемым") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+    service.LoadOrCreate(dir.Path());
+
+    const std::string settings = Read(dir.File("Settings.json"));
+    CHECK(settings.find("\"$schema\": \"./Settings.schema.json\"") != std::string::npos);
+
+    // Файл с комментариями обязан разбираться нашим же путём
+    const nlohmann::json parsed =
+        nlohmann::json::parse(ch::StripJsonExtras(settings), nullptr, false);
+    REQUIRE_FALSE(parsed.is_discarded());
+    CHECK(parsed["Database"]["Port"].get<int>() == 3306);
+
+    // И схема, и дефолтные сообщения — валидный JSON
+    CHECK_FALSE(nlohmann::json::parse(Read(dir.File("Settings.schema.json")), nullptr, false)
+                    .is_discarded());
+    CHECK_FALSE(nlohmann::json::parse(ch::StripJsonExtras(Read(dir.File("Messages.json"))),
+                                      nullptr, false)
+                    .is_discarded());
+}
+
+TEST_CASE("Битый JSON не роняет плагин и не перезаписывается") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    const std::string broken = "{ \"ServerId\": 7,, }";
+    Write(dir.File("Settings.json"), broken);
+
+    const ch::Config config = service.LoadOrCreate(dir.Path());
+
+    // Значения по умолчанию вместо падения
+    CHECK(config.serverId == 1);
+    CHECK(service.FailedFiles().size() == 1);
+
+    // Файл человека остался как был: перезаписать его значило бы уничтожить
+    // работу вместе с опечаткой
+    CHECK(Read(dir.File("Settings.json")) == broken);
+}
+
+TEST_CASE("Комментарии и висящие запятые принимаются") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    Write(dir.File("Settings.json"),
+          "{\n"
+          "  // номер этого сервера\n"
+          "  \"ServerId\": 42,\n"
+          "  \"Database\": {\n"
+          "    \"Host\": \"db.example.com\", /* внешняя база */\n"
+          "    \"TablePrefix\": \"stats_\", // с запятой на конце\n"
+          "  },\n"
+          "}\n");
+
+    const ch::Config config = service.LoadOrCreate(dir.Path());
+
+    CHECK(service.FailedFiles().empty());
+    CHECK(config.serverId == 42);
+    CHECK(config.database.host == "db.example.com");
+    CHECK(config.database.tablePrefix == "stats_");
+}
+
+TEST_CASE("Запятая внутри строки висящей не считается") {
+    // Строкоосознанность обхода: иначе ник или сообщение с ", }" превратились бы
+    // в битый JSON после нашей же чистки
+    const std::string text = "{ \"a\": \"привет, }\" }";
+    CHECK(ch::StripJsonExtras(text) == text);
+
+    // А комментарий внутри строки — просто текст
+    const std::string url = "{ \"u\": \"https://example.com/x\" }";
+    CHECK(ch::StripJsonExtras(url) == url);
+}
+
+TEST_CASE("Отсутствующие секции дают дефолты, а не нули") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    Write(dir.File("Settings.json"), "{ \"ServerId\": 3 }");
+
+    const ch::Config config = service.LoadOrCreate(dir.Path());
+
+    CHECK(config.serverId == 3);
+    CHECK(config.database.port == 3306);
+    CHECK(config.database.tablePrefix == "ch_");
+    CHECK(config.storage.retryAttempts == 3);
+    CHECK(config.commands.lastSeenLimit == 5);
+    CHECK(config.collect.pingSampleIntervalSeconds == 30);
+    // Нули здесь означали бы таймаут 0 и очередь без ретраев
+    CHECK(config.database.commandTimeoutSeconds == 30);
+}
+
+TEST_CASE("Значение неверного типа не обнуляет настройку") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    Write(dir.File("Settings.json"),
+          "{ \"ServerId\": \"не число\", \"Database\": { \"Port\": \"3307\" } }");
+
+    const ch::Config config = service.LoadOrCreate(dir.Path());
+
+    CHECK(config.serverId == 1);
+    CHECK(config.database.port == 3306);
+}
+
+TEST_CASE("DisplayTimeZone читается из файла") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    Write(dir.File("Settings.json"), "{ \"DisplayTimeZone\": \"+03:00\" }");
+    CHECK(service.LoadOrCreate(dir.Path()).displayTimeZone == "+03:00");
+}
+
+TEST_CASE("Settings.json не читается кем попало") {
+    // В файле пароль от базы, а плагины ставят на shared-хостинг
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+    service.LoadOrCreate(dir.Path());
+
+    struct stat info;
+    REQUIRE(stat(dir.File("Settings.json").c_str(), &info) == 0);
+    CHECK((info.st_mode & S_IRGRP) == 0);
+    CHECK((info.st_mode & S_IROTH) == 0);
+}
+
+TEST_CASE("Сообщения читаются в карту ключ -> язык -> текст") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    const ch::Config config = service.LoadOrCreate(dir.Path());
+
+    REQUIRE(config.messages.count("prefix") == 1);
+    CHECK(config.messages.at("prefix").count("RU") == 1);
+    CHECK(config.messages.at("playtime").count("EN") == 1);
+    // Теги те же, что в C#-целях: Messages.json переносится между реализациями
+    CHECK(config.messages.at("prefix").at("RU").find("{GREEN}") != std::string::npos);
+}
