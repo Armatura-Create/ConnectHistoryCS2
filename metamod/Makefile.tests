@@ -1,0 +1,35 @@
+# Локальная проверка ЯДРА плагина: без hl2sdk, без Metamod, без MySQL.
+#
+# Смысл раздельной сборки в том, что почти вся логика (конфиг, SQL-тексты,
+# арифметика сессий, цвета чата, IP, спул) движка не требует, а собрать hl2sdk
+# на машине разработчика под macOS нельзя вовсе. Всё, что зависит от SDK и от
+# libmariadb, живёт в src/mm и src/db и проверяется только в CI.
+#
+#   make -f Makefile.tests && ./build-tests/ch_tests
+
+CXX      ?= c++
+CXXSTD   ?= -std=c++17
+CXXFLAGS ?= $(CXXSTD) -O1 -g -Wall -Wextra -Wpedantic -Werror
+INCLUDES  = -Isrc -Ivendor/doctest/doctest -Ivendor/json/single_include
+
+OUT       = build-tests
+BIN       = $(OUT)/ch_tests
+
+CORE_SRC  = $(wildcard src/core/*.cpp) $(wildcard src/core/util/*.cpp)
+TEST_SRC  = $(wildcard tests/*.cpp)
+SRC       = $(CORE_SRC) $(TEST_SRC)
+OBJ       = $(patsubst %.cpp,$(OUT)/%.o,$(SRC))
+
+all: $(BIN)
+
+$(BIN): $(OBJ)
+	$(CXX) $(CXXFLAGS) -o $@ $(OBJ)
+
+$(OUT)/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+clean:
+	rm -rf $(OUT)
+
+.PHONY: all clean

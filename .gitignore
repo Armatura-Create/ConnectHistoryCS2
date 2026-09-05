@@ -9,6 +9,10 @@ obj/
 PackageRoot/
 **/PackageRoot/
 
+# Локальная проверка ядра C++-цели
+metamod/build-tests/
+metamod/build/
+
 # Archives
 *.zip
 *.7z
