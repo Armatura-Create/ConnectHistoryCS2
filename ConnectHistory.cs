@@ -244,20 +244,50 @@ public sealed partial class ConnectHistory : BasePlugin
         });
     }
 
-    /// Адрес сервера читается ТОЛЬКО из главного потока: ConVar — это натив,
-    /// и обращение к нему из фонового потока убивает процесс без стека в логе.
-    private static string ServerAddress()
+    /// Адрес сервера для справочника ch_servers.
+    ///
+    /// Первым идёт Server.PublicAddress из конфига: публичный адрес — внешний факт,
+    /// который знает владелец сервера, а не процесс. ConVar ip отдаёт адрес привязки
+    /// сокета и при обычной настройке равен 0.0.0.0 — записать его означает заполнить
+    /// колонку значением, по которому нельзя подключиться.
+    ///
+    /// Пустая строка — законный ответ «адрес неизвестен». Она НЕ затирает уже
+    /// записанный адрес: за это отвечает SQL в SessionWriter.WriteServerAsync.
+    ///
+    /// ConVar читается ТОЛЬКО из главного потока: это натив, и обращение к нему
+    /// из фонового потока убивает процесс без стека в логе.
+    private string ServerAddress()
     {
+        var configured = Config.Server.PublicAddress;
+
+        string convarIp;
+        int port;
+
         try
         {
-            var ip = ConVar.Find("ip")?.StringValue ?? "";
-            var port = ConVar.Find("hostport")?.GetPrimitiveValue<int>() ?? 0;
-            return string.Create(CultureInfo.InvariantCulture, $"{ip}:{port}");
+            convarIp = ConVar.Find("ip")?.StringValue ?? "";
+            port = ConVar.Find("hostport")?.GetPrimitiveValue<int>() ?? 0;
         }
         catch (Exception)
         {
-            return "";
+            convarIp = "";
+            port = 0;
         }
+
+        var address = IpUtil.ResolvePublicAddress(configured, convarIp, port);
+
+        if (address.Length == 0)
+        {
+            _logger.Warn(string.IsNullOrWhiteSpace(configured)
+                ? "[Plugin] Публичный адрес сервера определить не удалось: ConVar ip = " +
+                  $"\"{convarIp}\" (это адрес привязки сокета, а не адрес сервера). " +
+                  "Пропишите Server.PublicAddress в Settings.json — иначе колонка address останется пустой"
+                : $"[Plugin] Server.PublicAddress = \"{configured}\" не похож на публичный адрес " +
+                  "(ожидается \"ip:port\" или \"host:port\", адрес не может быть 0.0.0.0 или локальным). " +
+                  "Колонка address останется пустой");
+        }
+
+        return address;
     }
 
     internal static string CurrentMap()

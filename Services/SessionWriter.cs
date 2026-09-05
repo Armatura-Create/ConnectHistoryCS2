@@ -184,13 +184,26 @@ public sealed class SessionWriter : IAsyncDisposable
         return command;
     }
 
+    /// Пустой адрес НЕ затирает уже записанный.
+    ///
+    /// Это корень проблемы «в базе 0.0.0.0, и правка руками не держится»: раньше
+    /// адрес перезаписывался при КАЖДОМ старте, поэтому исправленная вручную строка
+    /// возвращалась к мусору на следующем рестарте. Теперь отсутствие адреса —
+    /// это «нечего сказать», а не «сотри то, что есть».
+    ///
+    /// Вынесено в отдельный метод, чтобы это свойство проверялось тестом:
+    /// условие легко потерять при следующей правке запроса.
+    internal static string ServerUpsertSql(string prefix) =>
+        $"INSERT INTO `{prefix}servers` (`id`, `address`, `hostname`, `first_seen`, `last_seen`) " +
+        "VALUES (@id, @address, @hostname, @now, @now) " +
+        "ON DUPLICATE KEY UPDATE " +
+        "`address` = IF(VALUES(`address`) = '', `address`, VALUES(`address`)), " +
+        "`hostname` = IF(VALUES(`hostname`) = '', `hostname`, VALUES(`hostname`)), " +
+        "`last_seen` = VALUES(`last_seen`)";
+
     private async Task WriteServerAsync(MySqlConnection connection, ServerUpsertJob job, CancellationToken token)
     {
-        await using var command = NewCommand(connection,
-            $"INSERT INTO `{_db.Prefix}servers` (`id`, `address`, `hostname`, `first_seen`, `last_seen`) " +
-            "VALUES (@id, @address, @hostname, @now, @now) " +
-            "ON DUPLICATE KEY UPDATE `address` = VALUES(`address`), " +
-            "`hostname` = VALUES(`hostname`), `last_seen` = VALUES(`last_seen`)");
+        await using var command = NewCommand(connection, ServerUpsertSql(_db.Prefix));
 
         command.Parameters.AddWithValue("@id", job.ServerId);
         command.Parameters.AddWithValue("@address", job.Address);

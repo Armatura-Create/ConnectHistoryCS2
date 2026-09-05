@@ -67,4 +67,46 @@ public class SchemaTests
         Assert.True(SchemaService.CurrentVersion >= highest,
             $"CurrentVersion {SchemaService.CurrentVersion} меньше последней миграции {highest}");
     }
+
+    /// Миграция v2 чистит ch_servers.address от значений, которые адресом не являются.
+    ///
+    /// Раньше туда писался результат ConVar ip, а он при обычной настройке равен
+    /// 0.0.0.0 — адрес привязки сокета. Строку сервера при этом трогать нельзя:
+    /// испорчено одно поле, а не запись.
+    [Fact]
+    public void MigrationTwoClearsBindAddressesWithoutDeletingServers()
+    {
+        var steps = SchemaService.Migrations("ch_");
+
+        Assert.True(steps.ContainsKey(2), "шаг миграции до версии 2 обязан существовать");
+
+        var sql = string.Join(" ", steps[2]);
+
+        Assert.Contains("UPDATE `ch_servers`", sql);
+        Assert.Contains("0.0.0.0", sql);
+        Assert.DoesNotContain("DELETE", sql, System.StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DROP", sql, System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// Каждый шаг обязан быть не выше объявленной версии схемы, иначе он
+    /// никогда не выполнится: EnsureSchemaAsync идёт до CurrentVersion.
+    [Fact]
+    public void EveryMigrationStepIsReachable()
+    {
+        foreach (var target in SchemaService.Migrations("ch_").Keys)
+        {
+            Assert.InRange(target, 1, SchemaService.CurrentVersion);
+        }
+    }
+
+    /// Префикс подставляется в текст SQL как идентификатор — он обязан
+    /// проходить через тот же белый список, что и остальная схема.
+    [Fact]
+    public void MigrationsRespectThePrefix()
+    {
+        var sql = string.Join(" ", SchemaService.Migrations("proj2_")[2]);
+
+        Assert.Contains("`proj2_servers`", sql);
+        Assert.DoesNotContain("`ch_servers`", sql);
+    }
 }

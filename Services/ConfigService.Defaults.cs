@@ -16,6 +16,7 @@ public sealed partial class ConfigService
         ServerId = 1,
         DefaultLang = "RU",
         DisplayTimeZone = "UTC",
+        Server = new ServerConfig(),
         Database = new DatabaseConfig
         {
             Host = "127.0.0.1",
@@ -108,6 +109,11 @@ public sealed partial class ConfigService
             .AppendLine("                           \"Europe/Moscow\", \"UTC\" или \"Local\".")
             .AppendLine("                           В базе время ВСЕГДА в UTC, эта настройка на неё не влияет.")
             .AppendLine("  Database.TablePrefix   — префикс таблиц, по умолчанию ch_")
+            .AppendLine("  Server.PublicAddress   — публичный адрес сервера, \"ip:port\" или \"host:port\".")
+            .AppendLine("                           Процесс сервера своего публичного адреса не знает:")
+            .AppendLine("                           ConVar ip отдаёт адрес привязки сокета, обычно 0.0.0.0.")
+            .AppendLine("                           Пусто — плагин попробует определить сам и оставит колонку")
+            .AppendLine("                           address пустой, если получится только 0.0.0.0 или локальный адрес.")
             .AppendLine()
             .AppendLine("Что собирается (секция Collect)")
             .AppendLine("  GeoIp                  — страна и город по GeoLite2 (.mmdb рядом с DLL)")

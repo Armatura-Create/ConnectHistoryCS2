@@ -42,6 +42,17 @@ public sealed partial class ConfigService
               "description": "Часовой пояс для времени, которое видят игроки: IANA-идентификатор (Europe/Moscow), \"UTC\" или \"Local\". В базу время всегда пишется в UTC.",
               "examples": ["UTC", "Local", "Europe/Moscow", "Europe/Kyiv", "Asia/Almaty"]
             },
+            "Server": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "PublicAddress": {
+                  "type": "string",
+                  "description": "Публичный адрес сервера: \"ip:port\" или \"host:port\". Пусто — определять автоматически (ConVar ip часто отдаёт 0.0.0.0, такое значение отбраковывается).",
+                  "examples": ["", "203.0.113.10:27015", "cs2.example.com:27015"]
+                }
+              }
+            },
             "Database": {
               "type": "object",
               "additionalProperties": false,

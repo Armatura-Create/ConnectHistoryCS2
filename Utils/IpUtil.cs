@@ -33,6 +33,105 @@ public static class IpUtil
         return value[..lastColon];
     }
 
+    /// Публичный адрес сервера для справочника ch_servers.
+    ///
+    /// Порядок и его причина: значение из конфига важнее любого автоопределения,
+    /// потому что публичный адрес — внешний факт. Процесс игрового сервера его
+    /// не знает: ConVar ip отдаёт адрес ПРИВЯЗКИ сокета, и при обычной настройке
+    /// это 0.0.0.0 («слушаю все интерфейсы»). Записать такое в базу — значит
+    /// записать значение, по которому нельзя подключиться.
+    ///
+    /// Пустая строка на выходе — законный результат, означающий «адрес неизвестен».
+    /// Он не затирает уже записанный адрес: см. SessionWriter.WriteServerAsync.
+    public static string ResolvePublicAddress(string? configured, string? convarIp, int port)
+    {
+        // Настройка заполнена — работаем только по ней. Если значение непригодно,
+        // это ошибка настройки, и подменять её автоопределением нельзя: человек
+        // никогда не узнает об опечатке, а в базе окажется адрес, которого он не писал.
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return NormalizeAddress(configured, port) ?? string.Empty;
+        }
+
+        var ip = ExtractIp(convarIp);
+        if (!IsUsablePublicHost(ip)) return string.Empty;
+        if (port is <= 0 or > 65535) return string.Empty;
+
+        return FormatAddress(ip, port);
+    }
+
+    /// Приводит настройку вида "1.2.3.4:27015", "host:27015", "[::1]:27015" или "1.2.3.4"
+    /// к каноническому "host:port". Порт можно не указывать — возьмётся из ConVar hostport.
+    /// null означает «настройка непригодна», в том числе если человек вписал 0.0.0.0.
+    internal static string? NormalizeAddress(string? configured, int fallbackPort)
+    {
+        if (string.IsNullOrWhiteSpace(configured)) return null;
+
+        var value = configured.Trim();
+        var host = ExtractIp(value);
+
+        if (string.IsNullOrWhiteSpace(host)) return null;
+
+        // Хост может быть и доменом — тогда проверка «не 0.0.0.0» неприменима,
+        // но пустышки и адрес привязки отсечь всё равно нужно.
+        if (IPAddress.TryParse(host, out _) && !IsUsablePublicHost(host)) return null;
+
+        // Отсутствие порта и НЕЧИТАЕМЫЙ порт — разные вещи. Первое означает
+        // «возьми из ConVar», второе — опечатку. Подставлять чужой порт вместо
+        // опечатки нельзя: получится правдоподобный, но неверный адрес.
+        if (!TryExtractPort(value, out var explicitPort)) return null;
+
+        var port = explicitPort ?? fallbackPort;
+        if (port is <= 0 or > 65535) return null;
+
+        return FormatAddress(host, port);
+    }
+
+    /// Годится ли адрес как публичный: не пустой, разбирается, не «любой интерфейс»,
+    /// не loopback и не приватная сеть.
+    private static bool IsUsablePublicHost(string? ip)
+    {
+        if (string.IsNullOrWhiteSpace(ip)) return false;
+        if (!IPAddress.TryParse(ip, out var parsed)) return false;
+        if (parsed.Equals(IPAddress.Any) || parsed.Equals(IPAddress.IPv6Any)) return false;
+
+        return !IsLocalOrPrivate(ip);
+    }
+
+    /// Порт из "host:port" или "[v6]:port". Голый IPv6 порта не содержит.
+    ///
+    /// false — порт указан, но прочитать его нельзя (пустой, с буквами, со знаком).
+    /// true с null в port — порта нет вовсе, и это нормально.
+    private static bool TryExtractPort(string value, out int? port)
+    {
+        port = null;
+
+        var separator = value.StartsWith('[')
+            ? value.IndexOf("]:", StringComparison.Ordinal) is var bracket && bracket > 0 ? bracket + 1 : -1
+            : value.IndexOf(':', StringComparison.Ordinal) == value.LastIndexOf(':') ? value.LastIndexOf(':') : -1;
+
+        if (separator < 0) return true;
+        if (separator + 1 >= value.Length) return false;
+
+        // NumberStyles.None отсекает знак и пробелы: "+27015" и " 27015" — тоже опечатки
+        if (!int.TryParse(value[(separator + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return false;
+        }
+
+        port = parsed;
+        return true;
+    }
+
+    /// IPv6 в адресе пишется в скобках, иначе двоеточие порта неотличимо от адреса.
+    private static string FormatAddress(string host, int port)
+    {
+        var isIpv6 = IPAddress.TryParse(host, out var parsed)
+                     && parsed.AddressFamily == AddressFamily.InterNetworkV6;
+
+        return string.Create(CultureInfo.InvariantCulture, $"{(isIpv6 ? "[" + host + "]" : host)}:{port}");
+    }
+
     /// Подсеть: /24 для IPv4, /48 для IPv6.
     ///
     /// Нужна для аналитики «тот же провайдер / тот же дом» там, где хранить полный адрес

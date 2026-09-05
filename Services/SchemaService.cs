@@ -14,7 +14,7 @@ namespace ConnectHistory;
 public sealed class SchemaService
 {
     /// Версия схемы. Поднимается ТОЛЬКО вместе с добавлением шага в Migrations.
-    internal const int CurrentVersion = 1;
+    internal const int CurrentVersion = 2;
 
     private readonly DatabaseService _db;
     private readonly ILogger _logger;
@@ -149,13 +149,28 @@ public sealed class SchemaService
     ];
 
     /// Шаги миграции для баз, созданных предыдущими версиями плагина.
-    /// Ключ — версия, ДО которой поднимаемся. Пока схема первая, список пуст,
-    /// но механизм есть: добавление колонки не должно требовать ручного ALTER на боевой базе.
-    internal static IReadOnlyDictionary<int, string[]> Migrations(string prefix)
-    {
-        _ = prefix;
-        return new Dictionary<int, string[]>();
-    }
+    /// Ключ — версия, ДО которой поднимаемся.
+    internal static IReadOnlyDictionary<int, string[]> Migrations(string prefix) =>
+        new Dictionary<int, string[]>
+        {
+            // v2: убрать из ch_servers.address значения, которые адресом не являются.
+            //
+            // До этой версии плагин писал туда результат ConVar ip, а тот при обычной
+            // настройке равен 0.0.0.0 — это адрес привязки сокета, а не адрес сервера.
+            // Пустая строка честнее: она означает «адрес неизвестен» и, начиная с этой
+            // же версии, не перезаписывается пустым значением при следующем старте
+            // (см. SessionWriter.WriteServerAsync). Как только в конфиге появится
+            // Server.PublicAddress, колонка заполнится настоящим адресом.
+            //
+            // UPDATE, а не DELETE: строка сервера нужна, испорчено только одно поле.
+            [2] =
+            [
+                $"UPDATE `{prefix}servers` SET `address` = '' " +
+                "WHERE `address` LIKE '0.0.0.0%' " +
+                "   OR `address` LIKE '[::]%' " +
+                "   OR `address` LIKE ':%'"
+            ]
+        };
 
     public async Task<bool> EnsureSchemaAsync(CancellationToken token)
     {

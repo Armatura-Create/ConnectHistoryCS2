@@ -76,4 +76,14 @@ public class DatabaseConnectionTests
     public void Mask_HandlesExceptionTextWithPwdAlias()
         => Assert.DoesNotContain("hunter2", SqlSanitizer.Mask("Access denied (server=db;pwd=hunter2;db=x)"),
             System.StringComparison.Ordinal);
+
+    /// В .NET, как и в PCRE, якорь $ совпадает ПЕРЕД завершающим переводом строки.
+    /// Пока в белом списке стоял $, префикс "ch_\n" проходил проверку и уезжал
+    /// в текст SQL как часть имени таблицы — параметризовать идентификатор нельзя.
+    [Theory]
+    [InlineData("ch_\n")]
+    [InlineData("ch_\r\n")]
+    [InlineData("ch_\n; DROP TABLE ch_sessions; --")]
+    public void PrefixWithTrailingNewlineIsRejected(string prefix)
+        => Assert.Equal("ch_", DatabaseService.SanitizePrefix(prefix));
 }

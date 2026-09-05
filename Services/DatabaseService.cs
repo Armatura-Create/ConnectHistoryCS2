@@ -35,7 +35,10 @@ public sealed partial class DatabaseService
         CommandTimeoutSeconds = config.CommandTimeoutSeconds == 0 ? 30 : config.CommandTimeoutSeconds;
     }
 
-    [GeneratedRegex(@"^[A-Za-z0-9_]{0,16}$", RegexOptions.CultureInvariant)]
+    /// Якорь \z, а не $: в .NET (как и в PCRE) $ совпадает ПЕРЕД завершающим
+    /// переводом строки, поэтому префикс "ch_\n" прошёл бы белый список
+    /// и уехал в текст SQL как часть имени таблицы.
+    [GeneratedRegex(@"^[A-Za-z0-9_]{0,16}\z", RegexOptions.CultureInvariant)]
     private static partial Regex PrefixRegex();
 
     /// Префикс таблиц попадает в текст SQL как идентификатор — параметризовать его нельзя.

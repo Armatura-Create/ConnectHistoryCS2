@@ -184,6 +184,7 @@ public sealed partial class ConfigService
             ServerId = s.ServerId,
             DefaultLang = string.IsNullOrWhiteSpace(s.DefaultLang) ? "RU" : s.DefaultLang,
             DisplayTimeZone = string.IsNullOrWhiteSpace(s.DisplayTimeZone) ? "UTC" : s.DisplayTimeZone,
+            Server = s.Server ?? new ServerConfig(),
             Database = s.Database ?? new DatabaseConfig(),
             Collect = s.Collect ?? new CollectConfig(),
             Storage = s.Storage ?? new StorageConfig(),

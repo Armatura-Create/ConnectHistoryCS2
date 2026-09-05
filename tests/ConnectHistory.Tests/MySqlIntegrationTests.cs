@@ -324,4 +324,114 @@ public class MySqlIntegrationTests
 
         System.IO.Directory.Delete(spoolDir, recursive: true);
     }
+
+    /// Миграция v2 на базе, созданной прежней версией плагина.
+    ///
+    /// Ровно тот случай, ради которого она добавлена: в ch_servers лежит
+    /// "0.0.0.0:27015", записанный из ConVar ip. Проверяется три вещи —
+    /// мусор вычищен, СТРОКА СЕРВЕРА ЖИВА (испорчено одно поле, а не запись),
+    /// и настоящий адрес соседнего сервера не пострадал.
+    [SkippableFact]
+    public async Task MigrationToV2ClearsBindAddressButKeepsServers()
+    {
+        var config = ConfigFromEnv();
+        Skip.If(config == null, "CH_TEST_MYSQL не задан");
+
+        config!.TablePrefix = "chm_";
+
+        var logger = new NullLogger();
+        var db = new DatabaseService(config, logger);
+        var schema = new SchemaService(db, logger);
+
+        await using var connection = db.CreateConnection();
+        await connection.OpenAsync();
+
+        // Чистый старт: тест должен быть повторяемым
+        await Execute(connection, "DROP TABLE IF EXISTS `chm_servers`");
+        await Execute(connection, "DROP TABLE IF EXISTS `chm_schema_version`");
+
+        Assert.True(await schema.EnsureSchemaAsync(CancellationToken.None));
+
+        // Откатываем базу в состояние v1 и кладём туда мусор, как это делала прежняя версия
+        await Execute(connection, "UPDATE `chm_schema_version` SET `v` = 1 WHERE `k` = 'schema'");
+        await Execute(connection,
+            "INSERT INTO `chm_servers` (`id`, `address`, `hostname`, `first_seen`, `last_seen`) " +
+            "VALUES (1, '0.0.0.0:27015', 'Плохой', UTC_TIMESTAMP(), UTC_TIMESTAMP()), " +
+            "       (2, '203.0.113.10:27015', 'Хороший', UTC_TIMESTAMP(), UTC_TIMESTAMP()) " +
+            "ON DUPLICATE KEY UPDATE `address` = VALUES(`address`), `hostname` = VALUES(`hostname`)");
+
+        Assert.True(await schema.EnsureSchemaAsync(CancellationToken.None));
+
+        Assert.Equal("", await Scalar(connection, "SELECT `address` FROM `chm_servers` WHERE `id` = 1"));
+        Assert.Equal("Плохой", await Scalar(connection, "SELECT `hostname` FROM `chm_servers` WHERE `id` = 1"));
+        Assert.Equal("203.0.113.10:27015",
+            await Scalar(connection, "SELECT `address` FROM `chm_servers` WHERE `id` = 2"));
+
+        // Повторный прогон ничего не должен менять: миграция уже применена
+        Assert.True(await schema.EnsureSchemaAsync(CancellationToken.None));
+        Assert.Equal("203.0.113.10:27015",
+            await Scalar(connection, "SELECT `address` FROM `chm_servers` WHERE `id` = 2"));
+    }
+
+    /// Пустой адрес не затирает записанный — вторая половина той же проблемы:
+    /// без этого исправленная строка снова портилась бы на следующем рестарте.
+    [SkippableFact]
+    public async Task EmptyAddressDoesNotOverwriteAStoredOne()
+    {
+        var config = ConfigFromEnv();
+        Skip.If(config == null, "CH_TEST_MYSQL не задан");
+
+        config!.TablePrefix = "chu_";
+
+        var logger = new NullLogger();
+        var db = new DatabaseService(config, logger);
+        var schema = new SchemaService(db, logger);
+        Assert.True(await schema.EnsureSchemaAsync(CancellationToken.None));
+
+        await using var connection = db.CreateConnection();
+        await connection.OpenAsync();
+
+        await Execute(connection, "DELETE FROM `chu_servers` WHERE `id` = 77");
+
+        // Первый старт: адрес известен
+        await Upsert(connection, 77, "203.0.113.10:27015", "Сервер");
+        Assert.Equal("203.0.113.10:27015",
+            await Scalar(connection, "SELECT `address` FROM `chu_servers` WHERE `id` = 77"));
+
+        // Второй старт: адрес определить не удалось — записанный обязан уцелеть
+        await Upsert(connection, 77, "", "Сервер");
+        Assert.Equal("203.0.113.10:27015",
+            await Scalar(connection, "SELECT `address` FROM `chu_servers` WHERE `id` = 77"));
+
+        // Третий старт: адрес появился в конфиге — он обязан перезаписать старый
+        await Upsert(connection, 77, "198.51.100.5:27015", "Сервер");
+        Assert.Equal("198.51.100.5:27015",
+            await Scalar(connection, "SELECT `address` FROM `chu_servers` WHERE `id` = 77"));
+    }
+
+    private static async Task Upsert(MySqlConnection connection, int id, string address, string hostname)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = SessionWriter.ServerUpsertSql("chu_");
+        command.Parameters.AddWithValue("@id", id);
+        command.Parameters.AddWithValue("@address", address);
+        command.Parameters.AddWithValue("@hostname", hostname);
+        command.Parameters.AddWithValue("@now", DateTime.UtcNow);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task Execute(MySqlConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<string?> Scalar(MySqlConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        var value = await command.ExecuteScalarAsync();
+        return value is null or DBNull ? null : value.ToString();
+    }
 }

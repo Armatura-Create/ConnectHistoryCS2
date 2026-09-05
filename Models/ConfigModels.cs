@@ -20,10 +20,28 @@ public sealed class SettingsConfig
     /// На то, что пишется в базу, не влияет — там всегда UTC.
     public string DisplayTimeZone { get; set; } = "UTC";
 
+    public ServerConfig? Server { get; set; }
     public DatabaseConfig? Database { get; set; }
     public CollectConfig? Collect { get; set; }
     public StorageConfig? Storage { get; set; }
     public CommandsConfig? Commands { get; set; }
+}
+
+/// Как сервер представляется в справочнике ch_servers.
+public sealed class ServerConfig
+{
+    /// Публичный адрес сервера в виде "ip:port" или "host:port".
+    ///
+    /// Зачем это настройка, а не автоопределение: процесс игрового сервера НЕ ЗНАЕТ
+    /// своего публичного адреса и знать не может. ConVar ip отдаёт адрес привязки
+    /// сокета, и при обычной конфигурации это 0.0.0.0 — «слушаю все интерфейсы».
+    /// Записать 0.0.0.0 как адрес сервера означает записать заведомо бесполезное
+    /// значение: по нему нельзя подключиться и нельзя отличить один сервер от другого.
+    ///
+    /// Пусто — плагин попробует прочитать ConVar и отбракует результат, если тот
+    /// окажется адресом привязки, локальным или приватным. Тогда колонка address
+    /// останется пустой, а не заполнится мусором.
+    public string PublicAddress { get; set; } = "";
 }
 
 /// Параметры подключения к MySQL.
@@ -129,6 +147,7 @@ public sealed class Config
     public int ServerId { get; set; } = 1;
     public string DefaultLang { get; set; } = "RU";
     public string DisplayTimeZone { get; set; } = "UTC";
+    public ServerConfig Server { get; set; } = new();
     public DatabaseConfig Database { get; set; } = new();
     public CollectConfig Collect { get; set; } = new();
     public StorageConfig Storage { get; set; } = new();
