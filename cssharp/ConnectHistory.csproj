@@ -60,7 +60,7 @@
       <_CityArchive>$(_TmpDir)GeoLite2-City.tar.gz</_CityArchive>
       <_CountryExtract>$(_TmpDir)country/</_CountryExtract>
       <_CityExtract>$(_TmpDir)city/</_CityExtract>
-      <_GeoIPDir>$(MSBuildProjectDirectory)/GeoIP/</_GeoIPDir>
+      <_GeoIPDir>$(MSBuildProjectDirectory)/../GeoIP/</_GeoIPDir>
     </PropertyGroup>
 
     <Message Text="GeoLite2 auto-download is enabled" Condition=" '$(_HasKey)' != '' " Importance="high" />
@@ -87,7 +87,8 @@
     <PropertyGroup>
       <_PackageRoot>$(TargetDir)PackageRoot/</_PackageRoot>
       <_PluginTargetDir>$(_PackageRoot)addons/counterstrikesharp/plugins/ConnectHistory/</_PluginTargetDir>
-      <_ReleaseZipFile>$(TargetDir)ConnectHistory.zip</_ReleaseZipFile>
+      <!-- Имя несёт цель и версию: в релизе рядом лежат архивы трёх платформ. -->
+      <_ReleaseZipFile>$(TargetDir)ConnectHistory_cssharp_$(Version).zip</_ReleaseZipFile>
     </PropertyGroup>
 
     <RemoveDir Directories="$(_PackageRoot)" ContinueOnError="true" />
@@ -102,14 +103,19 @@
       <PluginFiles Include="$(TargetDir)MaxMind.Db.dll" />
       <PluginFiles Include="$(TargetDir)GeoLite2-Country.mmdb" Condition="Exists('$(TargetDir)GeoLite2-Country.mmdb')" />
       <PluginFiles Include="$(TargetDir)GeoLite2-City.mmdb" Condition="Exists('$(TargetDir)GeoLite2-City.mmdb')" />
-      <DocFiles Include="$(MSBuildProjectDirectory)/docs/*.md" />
-      <DocFiles Include="$(MSBuildProjectDirectory)/README.md" />
+      <DocFiles Include="$(MSBuildProjectDirectory)/../docs/*.md" />
+      <DocFiles Include="$(MSBuildProjectDirectory)/../README.md" />
     </ItemGroup>
 
     <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(_PluginTargetDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(DocFiles)" DestinationFolder="$(_PackageRoot)ConnectHistory-docs/" SkipUnchangedFiles="true" />
 
-    <Delete Files="$(_ReleaseZipFile)" ContinueOnError="true" />
+    <!-- Архивы прошлых версий удаляем: иначе в TargetDir копится по файлу на каждую
+         собранную версию, и build.sh не может однозначно сказать, какой из них свежий. -->
+    <ItemGroup>
+      <_StaleZips Include="$(TargetDir)ConnectHistory_cssharp_*.zip" />
+    </ItemGroup>
+    <Delete Files="@(_StaleZips)" ContinueOnError="true" />
     <Message Text="Packaging plugin into $(_ReleaseZipFile)" Importance="high" />
     <Exec Condition=" '$(OS)' != 'Windows_NT' " Command="zip -rq &quot;$(_ReleaseZipFile)&quot; ." WorkingDirectory="$(_PackageRoot)" />
     <Exec Condition=" '$(OS)' == 'Windows_NT' " Command="powershell -NoProfile -Command &quot;Compress-Archive -Path '*' -DestinationPath '$(_ReleaseZipFile)' -Force&quot;" WorkingDirectory="$(_PackageRoot)" />

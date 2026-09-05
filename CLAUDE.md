@@ -18,8 +18,9 @@
 ## Команды
 
 ```bash
-./build.sh              # restore -> тесты -> Release -> bin/Release/net10.0/ConnectHistory.zip
-./build.sh 2.1.0        # то же, но с явной версией сборки
+cd cssharp
+./build.sh              # restore -> тесты -> Release -> bin/Release/net10.0/ConnectHistory_cssharp_<version>.zip
+./build.sh 2.3.0        # то же, но с явной версией сборки
 dotnet build            # обычная сборка
 dotnet test             # xUnit; интеграционные тесты MySQL пропускаются без CH_TEST_MYSQL
 ```
@@ -35,8 +36,10 @@ dotnet test
 
 ## CI/CD
 
-`.github/workflows/ci.yml` — push в `main` и любой PR: restore, сборка, тесты.
+`.github/workflows/ci-cssharp.yml` — push в `main` и любой PR, затрагивающий `cssharp/`
+или `GeoIP/`: restore, сборка, тесты.
 `.github/workflows/release.yml` — тег `v*` (или ручной запуск с указанием тега).
+Версия вычисляется один раз в job `version` и раздаётся всем целям.
 
 Оба поднимают сервис-контейнер MySQL 8 и передают `CH_TEST_MYSQL`: интеграционные тесты
 проверяют DDL, идемпотентность закрытия сессии и хранение времени в UTC — на моках
@@ -55,7 +58,7 @@ dotnet test
 
 Тесты красные — релиз не публикуется.
 
-Локально ту же цепочку прогоняет `./build.sh`.
+Локально ту же цепочку прогоняет `cssharp/build.sh`.
 
 Анализаторы (`EnableNETAnalyzers` + `AnalysisMode=Recommended`) включены постоянно, сборка
 держится на нуле предупреждений. `CA1716` и `CA1859` заглушены осознанно в `.csproj`.
