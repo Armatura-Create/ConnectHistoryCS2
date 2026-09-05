@@ -141,4 +141,9 @@ dotnet test
 
 ## Credits
 
-GeoLite2 data by [MaxMind](https://www.maxmind.com).
+GeoLite2 data by [MaxMind](https://www.maxmind.com), distributed under the
+[GeoLite2 End User License Agreement](https://www.maxmind.com/en/geolite2/eula).
+
+## License
+
+[GPL-3.0-or-later](LICENSE).

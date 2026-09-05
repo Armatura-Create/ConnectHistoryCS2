@@ -142,4 +142,9 @@ dotnet test
 
 ## Благодарности
 
-Данные GeoLite2 — [MaxMind](https://www.maxmind.com).
+Данные GeoLite2 — [MaxMind](https://www.maxmind.com), распространяются по
+[GeoLite2 End User License Agreement](https://www.maxmind.com/en/geolite2/eula).
+
+## Лицензия
+
+[GPL-3.0-or-later](LICENSE).
