@@ -85,6 +85,8 @@ Key options:
     "IpHashSalt": "",         // empty salt disables hashing (a saltless hash is reversible)
     "MatchStats": true,
     "Ping": true,
+    "CountSpectatorTime": true,  // false — do not count spectator and
+                                // unassigned time as playtime
     "OnlineSnapshots": true
   }
 }

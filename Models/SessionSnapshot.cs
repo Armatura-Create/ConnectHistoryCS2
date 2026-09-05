@@ -122,6 +122,15 @@ public sealed class SessionCloseJob : WriteJob
     public DateTime EndedAt { get; set; }
     public int DurationSeconds { get; set; }
 
+    /// Сколько из них игрок провёл наблюдателем или без команды.
+    public int SpectatorSeconds { get; set; }
+
+    /// Учитывать ли наблюдательское время в «наиграно» (ch_players.total_seconds).
+    /// Снимок настройки на момент закрытия: задание может пролежать в спуле,
+    /// и настройка за это время способна измениться — но строка обязана попасть
+    /// в базу по тем правилам, по которым была собрана.
+    public bool CountSpectatorTime { get; set; } = true;
+
     public string DisconnectMap { get; set; } = "";
     public int DisconnectReason { get; set; }
     public string DisconnectReasonName { get; set; } = "";

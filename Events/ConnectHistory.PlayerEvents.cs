@@ -63,7 +63,7 @@ public sealed partial class ConnectHistory
         if (player is null || player.IsBot) return HookResult.Continue;
 
         if (_sessions.TryGet(player.SteamID, out var session))
-            session.NoteTeam(ev.Team);
+            session.NoteTeam(ev.Team, DateTime.UtcNow);
 
         return HookResult.Continue;
     }
@@ -116,6 +116,10 @@ public sealed partial class ConnectHistory
             CountryIso = geo.Iso
         };
 
+        // Отсчёт времени вне игры начинается вместе с сессией: до первого
+        // player_team игрок выбирает команду, и это время тоже не игровое.
+        session.StartTeamTracking(session.StartedAt);
+
         _sessions.Add(session);
 
         _writer?.Enqueue(new SessionOpenJob
@@ -150,6 +154,14 @@ public sealed partial class ConnectHistory
         var endedAt = DateTime.UtcNow;
         var duration = (int)Math.Max(0, (endedAt - session.StartedAt).TotalSeconds);
 
+        // Последний интервал команды закрывается здесь, иначе время после
+        // последней смены команды нигде не учтётся.
+        session.FinishTeamTracking(endedAt);
+
+        // Наблюдательское время не может превышать саму сессию: часы сервера
+        // могут прыгнуть, а отрицательное «наиграно» испортит агрегат навсегда.
+        var spectator = Math.Clamp(session.SpectatorSeconds, 0, duration);
+
         if (player != null)
         {
             try
@@ -175,6 +187,8 @@ public sealed partial class ConnectHistory
             StartedAt = session.StartedAt,
             EndedAt = endedAt,
             DurationSeconds = duration,
+            SpectatorSeconds = spectator,
+            CountSpectatorTime = Config.Collect.CountSpectatorTime,
             DisconnectMap = CurrentMap(),
             DisconnectReason = reason,
             DisconnectReasonName = Truncate(reasonName, 64),

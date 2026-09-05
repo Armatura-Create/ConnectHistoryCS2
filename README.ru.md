@@ -86,6 +86,8 @@ addons/counterstrikesharp/plugins/ConnectHistory/
     "IpHashSalt": "",         // пустая соль отключает хеширование: хеш без соли обратим
     "MatchStats": true,
     "Ping": true,
+    "CountSpectatorTime": true,  // false — не считать наигранным время
+                                // в наблюдателях и без команды
     "OnlineSnapshots": true
   }
 }

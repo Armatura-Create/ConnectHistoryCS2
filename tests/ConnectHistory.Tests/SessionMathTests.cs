@@ -48,15 +48,96 @@ public class SessionMathTests
     public void FirstTeamIsNotACounterAsAChange()
     {
         var session = NewSession();
-        session.NoteTeam(2);
+        var t0 = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+        session.NoteTeam(2, t0);
         Assert.Equal(0, session.TeamChanges);
 
-        session.NoteTeam(2); // то же значение — не смена
+        session.NoteTeam(2, t0.AddMinutes(1)); // то же значение — не смена
         Assert.Equal(0, session.TeamChanges);
 
-        session.NoteTeam(3);
+        session.NoteTeam(3, t0.AddMinutes(2));
         Assert.Equal(1, session.TeamChanges);
         Assert.Equal(3, session.LastTeam);
+    }
+
+    /// Время наблюдателя копится по сменам команды: длительность сессии — это
+    /// время подключения, а «наиграно» — время в составе команды. Разделить их
+    /// постфактум нельзя, в базе остаётся только итоговая команда.
+    [Fact]
+    public void SpectatorTimeAccumulatesBetweenTeamChanges()
+    {
+        var session = NewSession();
+        var t0 = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        session.StartTeamTracking(t0);
+
+        session.NoteTeam(OpenSession.TeamSpectator, t0);            // ушёл в спектаторы
+        session.NoteTeam(3, t0.AddMinutes(10));                     // через 10 минут в CT
+        session.NoteTeam(OpenSession.TeamSpectator, t0.AddMinutes(40));
+        session.FinishTeamTracking(t0.AddMinutes(45));              // вышел из спектаторов
+
+        Assert.Equal(15 * 60, session.SpectatorSeconds);
+    }
+
+    /// Незакрытый последний интервал — самый вероятный способ потерять учёт:
+    /// игрок ушёл в спектаторы и просто отключился, смены команды больше не было.
+    [Fact]
+    public void FinalIntervalIsCountedOnClose()
+    {
+        var session = NewSession();
+        var t0 = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        session.StartTeamTracking(t0);
+
+        session.NoteTeam(OpenSession.TeamSpectator, t0.AddMinutes(5));
+
+        Assert.Equal(0, session.SpectatorSeconds);   // интервал ещё идёт
+
+        session.FinishTeamTracking(t0.AddMinutes(25));
+
+        Assert.Equal(20 * 60, session.SpectatorSeconds);
+    }
+
+    /// Состояние ДО первого player_team считается игровым сознательно: если
+    /// событие не придёт вовсе, игрок не должен остаться с нулевым наигранным.
+    [Fact]
+    public void TimeBeforeFirstTeamEventIsNotCountedAsSpectator()
+    {
+        var session = NewSession();
+        var t0 = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        session.StartTeamTracking(t0);
+
+        session.FinishTeamTracking(t0.AddHours(3));
+
+        Assert.Equal(0, session.SpectatorSeconds);
+    }
+
+    /// Без команды (0) — тоже не игра: это время выбора команды после входа.
+    [Fact]
+    public void UnassignedCountsAsOutOfGame()
+    {
+        var session = NewSession();
+        var t0 = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        session.StartTeamTracking(t0);
+
+        session.NoteTeam(OpenSession.TeamUnassigned, t0);
+        session.NoteTeam(2, t0.AddMinutes(3));
+        session.FinishTeamTracking(t0.AddMinutes(60));
+
+        Assert.Equal(3 * 60, session.SpectatorSeconds);
+    }
+
+    [Fact]
+    public void PlayingAllSessionLeavesNoSpectatorTime()
+    {
+        var session = NewSession();
+        var t0 = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        session.StartTeamTracking(t0);
+
+        session.NoteTeam(2, t0);
+        session.NoteTeam(3, t0.AddMinutes(30));
+        session.FinishTeamTracking(t0.AddMinutes(60));
+
+        Assert.Equal(0, session.SpectatorSeconds);
     }
 
     [Fact]

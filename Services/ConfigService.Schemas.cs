@@ -87,6 +87,10 @@ public sealed partial class ConfigService
                 "IpHashSalt": { "type": "string", "description": "Секрет для IpHash. Пустой = хеширование выключено." },
                 "MatchStats": { "type": "boolean" },
                 "Ping": { "type": "boolean" },
+                "CountSpectatorTime": {
+                  "type": "boolean",
+                  "description": "Считать ли в наигранное время (ch_players.total_seconds) время в наблюдателях и без команды. false — вычитать. На ch_sessions.duration_seconds не влияет: там всегда время подключения."
+                },
                 "NicknameHistory": { "type": "boolean" },
                 "PlayerAggregates": { "type": "boolean" },
                 "OnlineSnapshots": { "type": "boolean" },

@@ -321,6 +321,7 @@ public sealed class SessionWriter : IAsyncDisposable
         command.Parameters.AddWithValue("@key", job.SessionKey);
         command.Parameters.AddWithValue("@ended", job.EndedAt);
         command.Parameters.AddWithValue("@duration", job.DurationSeconds);
+        command.Parameters.AddWithValue("@spectator", job.SpectatorSeconds);
         command.Parameters.AddWithValue("@kind", (byte)job.EndKind);
         command.Parameters.AddWithValue("@nick", job.Nickname);
         command.Parameters.AddWithValue("@map", job.DisconnectMap);
@@ -348,11 +349,12 @@ public sealed class SessionWriter : IAsyncDisposable
         await using var command = NewCommand(connection,
             $"INSERT IGNORE INTO `{_db.Prefix}sessions` " +
             "(`session_key`, `steamid64`, `account_id`, `server_id`, `nickname`, `started_at`, " +
-            " `ended_at`, `duration_seconds`, `end_kind`, `disconnect_map`, `disconnect_reason`, " +
+            " `ended_at`, `duration_seconds`, `spectator_seconds`, `end_kind`, `disconnect_map`, " +
+            " `disconnect_reason`, " +
             " `disconnect_reason_name`, `kills`, `deaths`, `assists`, `headshots`, `damage`, `mvp`, " +
             " `score`, `rounds_played`, `team_final`, `team_changes`, `ping_avg`, `ping_min`, " +
             " `ping_max`, `ping_samples`) " +
-            "VALUES (@key, @steam, @account, @server, @nick, @started, @ended, @duration, @kind, " +
+            "VALUES (@key, @steam, @account, @server, @nick, @started, @ended, @duration, @spectator, @kind, " +
             " @map, @reason, @reason_name, @kills, @deaths, @assists, @headshots, @damage, @mvp, " +
             " @score, @rounds, @team, @team_changes, @ping_avg, @ping_min, @ping_max, @ping_samples)");
 
@@ -384,7 +386,13 @@ public sealed class SessionWriter : IAsyncDisposable
             players.Parameters.AddWithValue("@account", job.AccountId);
             players.Parameters.AddWithValue("@started", job.StartedAt);
             players.Parameters.AddWithValue("@ended", job.EndedAt);
-            players.Parameters.AddWithValue("@duration", job.DurationSeconds);
+            // В «наиграно» уходит либо вся сессия, либо время в составе команды —
+            // по настройке, снятой на момент закрытия сессии.
+            players.Parameters.AddWithValue(
+                "@duration",
+                job.CountSpectatorTime
+                    ? job.DurationSeconds
+                    : Math.Max(0, job.DurationSeconds - job.SpectatorSeconds));
             players.Parameters.AddWithValue("@nick", job.Nickname);
             players.Parameters.AddWithValue("@server", job.ServerId);
             await players.ExecuteNonQueryAsync(token).ConfigureAwait(false);

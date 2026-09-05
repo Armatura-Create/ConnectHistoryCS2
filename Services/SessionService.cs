@@ -32,6 +32,24 @@ public sealed class OpenSession
     public int LastTeam { get; private set; } = -1;
     public int TeamChanges { get; private set; }
 
+    /// Номера команд в CS2: 0 — не выбрана, 1 — наблюдатель, 2 — T, 3 — CT.
+    public const int TeamUnassigned = 0;
+    public const int TeamSpectator = 1;
+
+    /// Секунды, проведённые в наблюдателях и без команды.
+    ///
+    /// Копится по событиям смены команды: длительность сессии — это время
+    /// подключения, а «наиграно» — время в составе команды. Разделять их
+    /// постфактум нельзя, в базе остаётся только итоговая команда.
+    public int SpectatorSeconds { get; private set; }
+
+    /// Момент, с которого длится текущее состояние команды.
+    private DateTime _teamSince;
+
+    /// Отсчёт времени команды начинается вместе с сессией.
+    /// Вызывается фабрикой сессии сразу после создания.
+    public void StartTeamTracking(DateTime startedAt) => _teamSince = startedAt;
+
     /// Сыграно раундов. Считаем событием round_end, а не чтением схемы движка:
     /// поле «сыграно раундов» у контроллера живёт в match stats и обнуляется сменой карты,
     /// а нам нужно ровно то, что игрок застал в ЭТОЙ сессии.
@@ -64,11 +82,41 @@ public sealed class OpenSession
     public void NoteRoundEnd() => RoundsPlayed++;
 
     /// Первая увиденная команда — это не смена, а начальное состояние.
-    public void NoteTeam(int team)
+    ///
+    /// now передаётся аргументом, а не берётся внутри: так метод остаётся
+    /// проверяемым тестом без ожиданий в реальном времени.
+    public void NoteTeam(int team, DateTime now)
     {
         if (team == LastTeam) return;
+
+        AccrueTeamTime(now);
+
         if (LastTeam >= 0) TeamChanges++;
         LastTeam = team;
+    }
+
+    /// Закрывает последний интервал команды. Зовётся при закрытии сессии,
+    /// иначе время после последней смены команды нигде не учтётся.
+    public void FinishTeamTracking(DateTime now) => AccrueTeamTime(now);
+
+    /// Относит истёкший интервал к «вне игры», если игрок провёл его
+    /// наблюдателем или без команды.
+    ///
+    /// Состояние ДО первого события player_team (LastTeam = -1) намеренно
+    /// считается игровым: если событие почему-то не придёт вовсе, игрок не
+    /// должен остаться с нулевым наигранным временем. Ошибаться безопаснее
+    /// в сторону прежнего поведения.
+    private void AccrueTeamTime(DateTime now)
+    {
+        if (_teamSince == default) _teamSince = now;
+
+        if (LastTeam is TeamSpectator or TeamUnassigned)
+        {
+            var elapsed = (int)Math.Max(0, (now - _teamSince).TotalSeconds);
+            SpectatorSeconds += elapsed;
+        }
+
+        _teamSince = now;
     }
 }
 

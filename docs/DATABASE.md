@@ -47,7 +47,8 @@
 | `nickname` | VARCHAR(128) | ник на момент выхода (на входе, если сессия не закрыта) |
 | `started_at` | DATETIME | вход, UTC |
 | `ended_at` | DATETIME NULL | выход; `NULL` = сессия открыта |
-| `duration_seconds` | INT UNSIGNED NULL | длительность |
+| `duration_seconds` | INT UNSIGNED NULL | длительность подключения |
+| `spectator_seconds` | INT UNSIGNED NULL | из них в наблюдателях и без команды; `NULL` — версия схемы < 3 |
 | `end_kind` | TINYINT | 0 open, 1 disconnect, 2 map change, 3 shutdown, 4 plugin unload, 5 stale (аварийное завершение) |
 | `connect_map` / `disconnect_map` | VARCHAR(64) | карта на входе и на выходе |
 | `disconnect_reason` | SMALLINT NULL | код причины из перечисления Valve |
@@ -117,6 +118,31 @@ ConVar `ip` отдаёт адрес *привязки сокета*, и при �
 |---|---|
 | 1 | Исходная схема |
 | 2 | Чистка `ch_servers.address` от адресов привязки (`0.0.0.0…`) |
+| 3 | Колонка `ch_sessions.spectator_seconds` |
+
+### Наигранное время и наблюдатели
+
+`duration_seconds` — это всегда время подключения. Сколько из него игрок провёл
+наблюдателем или без команды, лежит в `spectator_seconds` и пишется **всегда**,
+независимо от настроек.
+
+На `ch_players.total_seconds` влияет `Collect.CountSpectatorTime`: при `false`
+в агрегат уходит `duration_seconds - spectator_seconds`. Поэтому топ по
+наигранному можно считать двумя способами, не меняя настройку:
+
+```sql
+-- Чистое игровое время за 30 дней, независимо от настройки плагина
+SELECT steamid64,
+       ROUND(SUM(duration_seconds - COALESCE(spectator_seconds, 0)) / 3600, 1) AS hours
+FROM ch_sessions
+WHERE ended_at IS NOT NULL AND started_at >= UTC_TIMESTAMP() - INTERVAL 30 DAY
+GROUP BY steamid64
+ORDER BY hours DESC
+LIMIT 50;
+```
+
+`NULL` в `spectator_seconds` означает «сессия записана схемой ниже 3-й версии,
+тогда не измеряли» — `COALESCE` трактует такие строки как «весь сеанс игровой».
 
 ## Готовые запросы
 

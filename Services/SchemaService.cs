@@ -14,7 +14,7 @@ namespace ConnectHistory;
 public sealed class SchemaService
 {
     /// Версия схемы. Поднимается ТОЛЬКО вместе с добавлением шага в Migrations.
-    internal const int CurrentVersion = 2;
+    internal const int CurrentVersion = 3;
 
     private readonly DatabaseService _db;
     private readonly ILogger _logger;
@@ -95,6 +95,7 @@ public sealed class SchemaService
            `started_at` DATETIME NOT NULL,
            `ended_at` DATETIME NULL DEFAULT NULL,
            `duration_seconds` INT UNSIGNED NULL DEFAULT NULL,
+           `spectator_seconds` INT UNSIGNED NULL DEFAULT NULL,
            `end_kind` TINYINT UNSIGNED NOT NULL DEFAULT 0,
            `connect_map` VARCHAR(64) NOT NULL DEFAULT '',
            `disconnect_map` VARCHAR(64) NULL DEFAULT NULL,
@@ -169,7 +170,26 @@ public sealed class SchemaService
                 "WHERE `address` LIKE '0.0.0.0%' " +
                 "   OR `address` LIKE '[::]%' " +
                 "   OR `address` LIKE ':%'"
-            ]
+            ],
+
+            // v3: время, проведённое наблюдателем и без команды.
+            //
+            // Пишется всегда, независимо от Collect.CountSpectatorTime: настройка
+            // решает лишь, вычитать ли его из «наиграно». Данные важнее настройки —
+            // передумав, владелец сервера сможет пересчитать агрегат, а не потерять
+            // историю. NULL в старых строках означает «тогда не измеряли».
+            // Просто ALTER, без условий: на свежей базе колонка уже создана
+            // BuildSchema, и шаг вернёт "duplicate column" — эту ошибку
+            // ApplyMigrationAsync считает признаком «уже применено».
+            //
+            // Условный DDL через SET @переменную здесь не годится: MySqlConnector
+            // трактует @имя как placeholder параметра, а не пользовательскую
+            // переменную, и запрос до сервера не доходит.
+            [3] =
+            [
+                $"ALTER TABLE `{prefix}sessions` ADD COLUMN `spectator_seconds` " +
+                "INT UNSIGNED NULL DEFAULT NULL AFTER `duration_seconds`"
+            ],
         };
 
     public async Task<bool> EnsureSchemaAsync(CancellationToken token)
@@ -198,7 +218,7 @@ public sealed class SchemaService
 
                 _logger.Info($"[DB] Миграция схемы {version} -> {target}");
                 foreach (var sql in statements)
-                    await ExecuteAsync(connection, sql, token).ConfigureAwait(false);
+                    await ApplyMigrationAsync(connection, sql, token).ConfigureAwait(false);
 
                 version = target;
             }
@@ -246,6 +266,28 @@ public sealed class SchemaService
         {
             _logger.Error("[DB] Не удалось пометить незакрытые сессии", ex);
             return 0;
+        }
+    }
+
+    /// Шаг миграции, устойчивый к повторному применению.
+    ///
+    /// Правило то же, что и у BuildSchema: DDL идемпотентен. Но у ALTER нет
+    /// формы IF NOT EXISTS в MySQL, поэтому «объект уже существует» трактуется
+    /// как «шаг уже применён», а не как сбой. Так же ведёт себя ситуация,
+    /// когда колонка приехала из BuildSchema на свежей базе.
+    ///
+    /// Все прочие ошибки пробрасываются: молча проглоченная миграция страшнее
+    /// упавшей — вторая видна сразу, первая всплывёт неверными данными.
+    private async Task ApplyMigrationAsync(MySqlConnection connection, string sql, CancellationToken token)
+    {
+        try
+        {
+            await ExecuteAsync(connection, sql, token).ConfigureAwait(false);
+        }
+        catch (MySqlException ex) when (ex.Number is 1050 or 1060 or 1061)
+        {
+            // 1050 — таблица уже есть, 1060 — колонка, 1061 — индекс
+            _logger.Info($"[DB] Шаг миграции уже применён, пропускаю: {ex.Message}");
         }
     }
 
