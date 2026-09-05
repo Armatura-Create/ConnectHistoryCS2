@@ -280,7 +280,13 @@ public sealed class SessionWriter : IAsyncDisposable
 
         await using (var command = NewCommand(connection,
             $"UPDATE `{_db.Prefix}sessions` SET " +
-            "`ended_at` = @ended, `duration_seconds` = @duration, `end_kind` = @kind, " +
+            // spectator_seconds обязан быть здесь, а не только в INSERT ниже: обычное
+            // закрытие сессии идёт именно этим UPDATE, и без колонки время вне игры
+            // оставалось NULL у каждой нормально закрытой сессии. Заметить это тестом,
+            // который шлёт одно задание закрытия без открытия, невозможно — такой
+            // сценарий уходит в ветку INSERT, где колонка есть.
+            "`ended_at` = @ended, `duration_seconds` = @duration, `spectator_seconds` = @spectator, " +
+            "`end_kind` = @kind, " +
             "`nickname` = @nick, `disconnect_map` = @map, `disconnect_reason` = @reason, " +
             "`disconnect_reason_name` = @reason_name, `kills` = @kills, `deaths` = @deaths, " +
             "`assists` = @assists, `headshots` = @headshots, `damage` = @damage, `mvp` = @mvp, " +

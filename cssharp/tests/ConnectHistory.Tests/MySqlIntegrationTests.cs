@@ -540,4 +540,75 @@ public class MySqlIntegrationTests
         Assert.Equal("3600", await Scalar(connection,
             $"SELECT `total_seconds` FROM `chk_players` WHERE `steamid64` = {steamId}"));
     }
+
+    /// Регрессия: spectator_seconds на ОБЫЧНОМ пути закрытия.
+    ///
+    /// Соседние тесты шлют одно задание закрытия без открытия — такое закрытие уходит
+    /// в ветку INSERT, где колонка есть, и потому не замечало, что в UPDATE её нет.
+    /// Здесь сессия сначала открывается, как это происходит на живом сервере,
+    /// и закрывается уже существующая строка.
+    [SkippableFact]
+    public async Task SpectatorSeconds_AreWrittenWhenClosingAnAlreadyOpenSession()
+    {
+        var config = ConfigFromEnv();
+        Skip.If(config == null, "CH_TEST_MYSQL не задан");
+
+        config!.TablePrefix = "chr_";
+
+        var logger = new NullLogger();
+        var db = new DatabaseService(config, logger);
+        var schema = new SchemaService(db, logger);
+        Assert.True(await schema.EnsureSchemaAsync(CancellationToken.None));
+
+        var steamId = 76561198000000000UL + (ulong)Random.Shared.Next(1, 1_000_000);
+        var key = Guid.NewGuid().ToString("N");
+        var started = DateTime.UtcNow.AddHours(-2);
+
+        var storage = new StorageConfig { SpoolEnabled = false, RetryAttempts = 1 };
+        var spoolDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(spoolDir);
+
+        var writer = new SessionWriter(db, storage, spoolDir, logger);
+
+        writer.Enqueue(new SessionOpenJob
+        {
+            SessionKey = key,
+            SteamId64 = steamId,
+            AccountId = SteamIdUtil.ToAccountId(steamId),
+            ServerId = 1,
+            Nickname = "Наблюдатель",
+            StartedAt = started,
+            ConnectMap = "de_dust2"
+        });
+
+        writer.Enqueue(new SessionCloseJob
+        {
+            SessionKey = key,
+            SteamId64 = steamId,
+            AccountId = SteamIdUtil.ToAccountId(steamId),
+            ServerId = 1,
+            Nickname = "Наблюдатель",
+            StartedAt = started,
+            EndedAt = started.AddHours(1),
+            DurationSeconds = 3600,
+            SpectatorSeconds = 1800,
+            CountSpectatorTime = false,
+            EndKind = SessionEndKind.Disconnect,
+            DisconnectMap = "de_dust2"
+        });
+
+        await writer.DisposeAsync();
+
+        await using var connection = db.CreateConnection();
+        await connection.OpenAsync();
+
+        Assert.Equal("3600", await Scalar(connection,
+            $"SELECT `duration_seconds` FROM `chr_sessions` WHERE `session_key` = '{key}'"));
+
+        Assert.Equal("1800", await Scalar(connection,
+            $"SELECT `spectator_seconds` FROM `chr_sessions` WHERE `session_key` = '{key}'"));
+
+        Assert.Equal("1800", await Scalar(connection,
+            $"SELECT `total_seconds` FROM `chr_players` WHERE `steamid64` = {steamId}"));
+    }
 }
