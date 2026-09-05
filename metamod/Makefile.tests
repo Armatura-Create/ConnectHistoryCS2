@@ -10,7 +10,8 @@
 CXX      ?= c++
 CXXSTD   ?= -std=c++17
 CXXFLAGS ?= $(CXXSTD) -O1 -g -Wall -Wextra -Wpedantic -Werror
-INCLUDES  = -Isrc -Ivendor/doctest/doctest -Ivendor/json/single_include
+INCLUDES  = -Isrc -Isrc/vendorcfg -Ivendor/doctest/doctest -Ivendor/json/single_include \
+            -Ivendor/libmaxminddb/include -Ivendor/libmaxminddb/src
 
 OUT       = build-tests
 BIN       = $(OUT)/ch_tests
@@ -20,6 +21,14 @@ TEST_SRC  = $(wildcard tests/*.cpp)
 SRC       = $(CORE_SRC) $(TEST_SRC)
 OBJ       = $(patsubst %.cpp,$(OUT)/%.o,$(SRC))
 
+# libmaxminddb собирается одним файлом-обёрткой (он же добавляет открытие из
+# памяти вместо mmap). Предупреждения чужого кода не наши — -Werror тут не к месту.
+C_SRC     = src/core/geoip_maxminddb.c vendor/libmaxminddb/src/data-pool.c
+C_OBJ     = $(patsubst %.c,$(OUT)/%.o,$(C_SRC))
+OBJ      += $(C_OBJ)
+CC       ?= cc
+CFLAGS   ?= -std=c99 -O1 -g -w
+
 all: $(BIN)
 
 $(BIN): $(OBJ)
@@ -28,6 +37,10 @@ $(BIN): $(OBJ)
 $(OUT)/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+
+$(OUT)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 clean:
 	rm -rf $(OUT)
