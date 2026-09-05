@@ -1,0 +1,143 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="Swiftly.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Platforms>AnyCPU</Platforms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- Схемные аксессоры SwiftlyS2 генерируются поверх указателей -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Те же анализаторы и те же осознанные заглушки, что в cssharp/ -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <NoWarn>$(NoWarn);CA1716;CA1859</NoWarn>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+
+    <RootNamespace>ConnectHistory</RootNamespace>
+    <AssemblyName>ConnectHistory</AssemblyName>
+    <Version>2.3.0</Version>
+    <Authors>Armatura</Authors>
+    <Copyright>Copyright (C) 2026 Armatura</Copyright>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/Armatura-Create/ConnectHistoryCS2</PackageProjectUrl>
+  </PropertyGroup>
+
+  <!-- Тестовый проект лежит внутри дерева плагина — не тянем его в сборку плагина -->
+  <ItemGroup>
+    <Compile Remove="tests/**" />
+    <None Remove="tests/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ExcludeAssets="runtime": сборки фреймворка предоставляет сам SwiftlyS2,
+         класть их рядом с плагином нельзя — получится два разных ISwiftlyCore.
+         Версия пакета обязана совпадать с MinimumAPIVersion в PluginMetadata
+         (проверяет ApiVersionTests) — то же правило, что и для CounterStrikeSharp:
+         собираемся против минимальной поддерживаемой версии, и тогда компиляция
+         сама доказывает, что API из более новых сборок не используется. -->
+    <PackageReference Include="SwiftlyS2.CS2" Version="$(SwiftlyApiVersion)" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" ExcludeAssets="runtime" PrivateAssets="all" />
+
+    <!-- А вот это плагин обязан привезти с собой: у хоста их нет -->
+    <PackageReference Include="MySqlConnector" Version="2.6.2" />
+    <PackageReference Include="MaxMind.GeoIP2" Version="5.3.0" />
+  </ItemGroup>
+
+  <!-- PluginMetadata — атрибут, а значения атрибутов обязаны быть константами времени
+       компиляции: положить туда версию, вычисленную из метаданных сборки, нельзя.
+       Поэтому константу генерирует MSBuild из того же <Version>, и правило «версию
+       руками нигде не поднимаем» остаётся в силе. %3B — это ';': в значении свойства
+       MSBuild точка с запятой разделяет элементы списка. -->
+  <Target Name="GeneratePluginVersion" BeforeTargets="BeforeCompile;CoreCompile">
+    <PropertyGroup>
+      <_VersionFile>$(IntermediateOutputPath)PluginVersion.g.cs</_VersionFile>
+      <_VersionLine>namespace ConnectHistory { internal static class GeneratedVersion { public const string Value = "$(Version)"%3B } }</_VersionLine>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_VersionFile)" Lines="$(_VersionLine)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(_VersionFile)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- GeoLite2: свежие базы качаются, если задан MAXMIND_LICENSE_KEY (env) или свойство
+       GeoLiteLicenseKey. Без ключа — молчаливый фолбэк на файлы в ../GeoIP/. -->
+  <PropertyGroup>
+    <GeoLiteLicenseKey Condition=" '$(GeoLiteLicenseKey)' == '' ">$(MAXMIND_LICENSE_KEY)</GeoLiteLicenseKey>
+  </PropertyGroup>
+
+  <Target Name="DownloadGeoLite2" AfterTargets="Build" BeforeTargets="PackageRelease">
+    <PropertyGroup>
+      <_HasKey>$(GeoLiteLicenseKey)</_HasKey>
+      <_TmpDir>$(IntermediateOutputPath)GeoLite2/</_TmpDir>
+      <_CountryUrl>https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&amp;license_key=$(GeoLiteLicenseKey)&amp;suffix=tar.gz</_CountryUrl>
+      <_CityUrl>https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&amp;license_key=$(GeoLiteLicenseKey)&amp;suffix=tar.gz</_CityUrl>
+      <_CountryArchive>$(_TmpDir)GeoLite2-Country.tar.gz</_CountryArchive>
+      <_CityArchive>$(_TmpDir)GeoLite2-City.tar.gz</_CityArchive>
+      <_CountryExtract>$(_TmpDir)country/</_CountryExtract>
+      <_CityExtract>$(_TmpDir)city/</_CityExtract>
+      <_GeoIPDir>$(MSBuildProjectDirectory)/../GeoIP/</_GeoIPDir>
+    </PropertyGroup>
+
+    <Message Text="GeoLite2 auto-download is enabled" Condition=" '$(_HasKey)' != '' " Importance="high" />
+    <Message Text="GeoLite2 auto-download skipped: set MAXMIND_LICENSE_KEY to refresh the databases during build" Condition=" '$(_HasKey)' == '' " Importance="high" />
+
+    <MakeDir Directories="$(_TmpDir);$(_CountryExtract);$(_CityExtract)" Condition=" '$(_HasKey)' != '' " />
+
+    <Exec Condition=" '$(_HasKey)' != '' and '$(OS)' != 'Windows_NT' " Command="curl -L -s -o &quot;$(_CountryArchive)&quot; &quot;$(_CountryUrl)&quot;" ContinueOnError="true" />
+    <Exec Condition=" '$(_HasKey)' != '' and '$(OS)' != 'Windows_NT' " Command="curl -L -s -o &quot;$(_CityArchive)&quot; &quot;$(_CityUrl)&quot;" ContinueOnError="true" />
+    <Exec Condition=" '$(_HasKey)' != '' and '$(OS)' != 'Windows_NT' " Command="tar -xzf &quot;$(_CountryArchive)&quot; -C &quot;$(_CountryExtract)&quot;" ContinueOnError="true" />
+    <Exec Condition=" '$(_HasKey)' != '' and '$(OS)' != 'Windows_NT' " Command="tar -xzf &quot;$(_CityArchive)&quot; -C &quot;$(_CityExtract)&quot;" ContinueOnError="true" />
+    <Exec Condition=" '$(_HasKey)' != '' and '$(OS)' != 'Windows_NT' " Command="/bin/sh -c 'cp &quot;$(_CountryExtract)&quot;*/GeoLite2-Country.mmdb &quot;$(TargetDir)GeoLite2-Country.mmdb&quot;'" ContinueOnError="true" />
+    <Exec Condition=" '$(_HasKey)' != '' and '$(OS)' != 'Windows_NT' " Command="/bin/sh -c 'cp &quot;$(_CityExtract)&quot;*/GeoLite2-City.mmdb &quot;$(TargetDir)GeoLite2-City.mmdb&quot;'" ContinueOnError="true" />
+
+    <RemoveDir Directories="$(_TmpDir)" Condition=" '$(_HasKey)' != '' " ContinueOnError="true" />
+
+    <Copy Condition=" !Exists('$(TargetDir)GeoLite2-Country.mmdb') and Exists('$(_GeoIPDir)GeoLite2-Country.mmdb') " SourceFiles="$(_GeoIPDir)GeoLite2-Country.mmdb" DestinationFiles="$(TargetDir)GeoLite2-Country.mmdb" SkipUnchangedFiles="true" />
+    <Copy Condition=" !Exists('$(TargetDir)GeoLite2-City.mmdb') and Exists('$(_GeoIPDir)GeoLite2-City.mmdb') " SourceFiles="$(_GeoIPDir)GeoLite2-City.mmdb" DestinationFiles="$(TargetDir)GeoLite2-City.mmdb" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Release: раскладываем файлы в структуру игрового сервера и зипуем.
+       Конфиг с паролем в архив НЕ кладём — он создаётся на сервере при первом запуске. -->
+  <Target Name="PackageRelease" AfterTargets="Build" Condition="'$(Configuration)'=='Release'">
+    <PropertyGroup>
+      <_PackageRoot>$(TargetDir)PackageRoot/</_PackageRoot>
+      <_PluginTargetDir>$(_PackageRoot)addons/swiftlys2/plugins/ConnectHistory/</_PluginTargetDir>
+      <_ReleaseZipFile>$(TargetDir)ConnectHistory_swiftly_$(Version).zip</_ReleaseZipFile>
+    </PropertyGroup>
+
+    <RemoveDir Directories="$(_PackageRoot)" ContinueOnError="true" />
+    <MakeDir Directories="$(_PluginTargetDir)" />
+
+    <ItemGroup>
+      <PluginFiles Include="$(TargetDir)ConnectHistory.dll" />
+      <PluginFiles Include="$(TargetDir)ConnectHistory.pdb" />
+      <PluginFiles Include="$(TargetDir)ConnectHistory.deps.json" />
+      <PluginFiles Include="$(TargetDir)MySqlConnector.dll" />
+      <PluginFiles Include="$(TargetDir)MaxMind.GeoIP2.dll" />
+      <PluginFiles Include="$(TargetDir)MaxMind.Db.dll" />
+      <PluginFiles Include="$(TargetDir)GeoLite2-Country.mmdb" Condition="Exists('$(TargetDir)GeoLite2-Country.mmdb')" />
+      <PluginFiles Include="$(TargetDir)GeoLite2-City.mmdb" Condition="Exists('$(TargetDir)GeoLite2-City.mmdb')" />
+      <DocFiles Include="$(MSBuildProjectDirectory)/../docs/*.md" />
+      <DocFiles Include="$(MSBuildProjectDirectory)/../README.md" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(_PluginTargetDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(DocFiles)" DestinationFolder="$(_PackageRoot)ConnectHistory-docs/" SkipUnchangedFiles="true" />
+
+    <!-- Архивы прошлых версий удаляем: иначе в TargetDir копится по файлу на каждую
+         собранную версию, и build.sh не может однозначно сказать, какой из них свежий. -->
+    <ItemGroup>
+      <_StaleZips Include="$(TargetDir)ConnectHistory_swiftly_*.zip" />
+    </ItemGroup>
+    <Delete Files="@(_StaleZips)" ContinueOnError="true" />
+
+    <Message Text="Packaging plugin into $(_ReleaseZipFile)" Importance="high" />
+    <Exec Condition=" '$(OS)' != 'Windows_NT' " Command="zip -rq &quot;$(_ReleaseZipFile)&quot; ." WorkingDirectory="$(_PackageRoot)" />
+    <Exec Condition=" '$(OS)' == 'Windows_NT' " Command="powershell -NoProfile -Command &quot;Compress-Archive -Path '*' -DestinationPath '$(_ReleaseZipFile)' -Force&quot;" WorkingDirectory="$(_PackageRoot)" />
+  </Target>
+
+</Project>

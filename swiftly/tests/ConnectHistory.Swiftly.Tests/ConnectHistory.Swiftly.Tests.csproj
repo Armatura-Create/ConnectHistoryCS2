@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="../../Swiftly.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>ConnectHistory.Swiftly.Tests</AssemblyName>
+    <RootNamespace>ConnectHistory.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <!-- SkippableFact: интеграционные тесты пропускаются, если MySQL под рукой нет -->
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.23" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Плагин отдаёт сборки SwiftlyS2 наружу как PrivateAssets (их предоставляет хост),
+         поэтому тестам нужна собственная ссылка — и уже с runtime-ассетами:
+         ApiVersionTests читает атрибуты через рефлексию и без DLL просто упадёт. -->
+    <PackageReference Include="SwiftlyS2.CS2" Version="$(SwiftlyApiVersion)" />
+    <ProjectReference Include="../../ConnectHistory.csproj" />
+  </ItemGroup>
+
+</Project>

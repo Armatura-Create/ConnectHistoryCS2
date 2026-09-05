@@ -1,0 +1,8 @@
+<!-- Скопируйте в Directory.Build.props и впишите свой ключ MaxMind, если хотите,
+     чтобы сборка качала свежие базы GeoLite2. Без ключа используются файлы из GeoIP/.
+     Файл с реальным ключом раздавать нельзя. -->
+<Project>
+  <PropertyGroup>
+    <GeoLiteLicenseKey>YOUR_MAXMIND_LICENSE_KEY</GeoLiteLicenseKey>
+  </PropertyGroup>
+</Project>

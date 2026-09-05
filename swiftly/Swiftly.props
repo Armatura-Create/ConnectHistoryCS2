@@ -1,0 +1,13 @@
+<!-- Версия SwiftlyS2, против которой собираются и плагин, и его тесты.
+
+     Один источник на два проекта нужен не ради красоты: ApiVersionTests сравнивает
+     MinimumAPIVersion плагина с версией сборки SwiftlyS2, которую подтянул ТЕСТОВЫЙ
+     проект. Разъехавшиеся литералы в двух .csproj превратили бы этот тест из проверки
+     инварианта в проверку того, что кто-то не забыл поправить второй файл.
+
+     Значение обязано совпадать с константой ConnectHistory.SwiftlyApiVersion. -->
+<Project>
+  <PropertyGroup>
+    <SwiftlyApiVersion>1.4.9</SwiftlyApiVersion>
+  </PropertyGroup>
+</Project>
