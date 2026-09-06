@@ -87,24 +87,39 @@ addons/swiftlys2/plugins/ConnectHistory/
 <details>
 <summary>Metamod:Source</summary>
 
-Windows и Linux лежат в одном архиве — лишний каталог просто не используется.
+По архиву на ОС — берите `..._linux_...` или `..._windows_...`.
 
 ```
 addons/metamod/ConnectHistory.vdf
 addons/ConnectHistory/
-├── bin/win64/ConnectHistory.dll
-├── bin/linuxsteamrt64/ConnectHistory.so
+├── bin/linuxsteamrt64/ConnectHistory.so   (или bin/win64/ConnectHistory.dll)
+├── configs/
+│   ├── Settings.json
+│   ├── Messages.json
+│   ├── Settings.schema.json
+│   ├── Messages.schema.json
+│   └── README.txt
 ├── GeoLite2-Country.mmdb
 └── GeoLite2-City.mmdb
 ```
+
+Конфиги по умолчанию уже лежат в архиве — плагин работает и там, где каталог
+сервера доступен только на чтение. Раскладку менять не нужно: конфиги плагин
+ищет в `csgo/addons/ConnectHistory/configs/` независимо от того, где лежит сам
+бинарник, и пишет в консоль, если добраться туда не смог.
+
+**При обновлении не распаковывайте `configs/` поверх существующей установки** —
+это затрёт ваш `Settings.json` вместе с паролем от базы.
 </details>
 
-2. Запустите сервер — плагин сам создаст конфиги и таблицы в базе.
+2. Запустите сервер — плагин создаст недостающие конфиги (вместе с родительскими
+   каталогами) и таблицы в базе. Если записать их не удалось, он скажет об этом
+   в консоли и назовёт точный путь, а не будет молча работать на дефолтах.
 3. Заполните секцию `Database` в `Settings.json` и перезагрузите конфигурацию
    (`css_ch_reload`, `sw_ch_reload` или `ch_reload` — по платформе).
 
-В `Settings.json` лежит пароль от базы, поэтому плагин держит файл с правами `600`
-и никогда не кладёт его в релизный архив.
+В `Settings.json` лежит пароль от базы, поэтому плагин держит файл с правами `600`.
+В архивах едет только **шаблон** с пустым паролем — релиз с заполненным не соберётся.
 
 ## Конфигурация
 
@@ -112,7 +127,7 @@ addons/ConnectHistory/
 |---|---|
 | CounterStrikeSharp | `csgo/addons/counterstrikesharp/configs/plugins/ConnectHistory/` |
 | SwiftlyS2 | `csgo/addons/swiftlys2/configs/plugins/ConnectHistory/` |
-| Metamod:Source | `csgo/addons/ConnectHistory/configs/` |
+| Metamod:Source | `csgo/addons/ConnectHistory/configs/` (фиксированный, не рядом с бинарником) |
 
 Формат файлов одинаковый: `Settings.json` и `Messages.json` переносятся между
 платформами без правок.

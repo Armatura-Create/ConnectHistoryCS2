@@ -15,6 +15,7 @@ INCLUDES  = -Isrc -Isrc/vendorcfg -Ivendor/doctest/doctest -Ivendor/json/single_
 
 OUT       = build-tests
 BIN       = $(OUT)/ch_tests
+DUMPER    = $(OUT)/dump_defaults
 
 CORE_SRC  = $(wildcard src/core/*.cpp) $(wildcard src/core/util/*.cpp)
 TEST_SRC  = $(wildcard tests/*.cpp)
@@ -33,6 +34,15 @@ all: $(BIN)
 
 $(BIN): $(OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJ)
+
+# Дефолтные конфиги для релизного архива. Отдельная цель, а не часть all:
+# нужна только сборке релиза, а тесты гоняют на каждом коммите.
+CORE_OBJ  = $(patsubst %.cpp,$(OUT)/%.o,$(CORE_SRC)) $(C_OBJ)
+
+dump-defaults: $(DUMPER)
+
+$(DUMPER): $(OUT)/tools/dump_defaults.o $(CORE_OBJ)
+	$(CXX) $(CXXFLAGS) -o $@ $^
 
 $(OUT)/%.o: %.cpp
 	@mkdir -p $(dir $@)
@@ -61,4 +71,4 @@ noexcept-check:
 clean:
 	rm -rf $(OUT)
 
-.PHONY: all clean noexcept-check
+.PHONY: all clean noexcept-check dump-defaults

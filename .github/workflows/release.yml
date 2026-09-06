@@ -233,6 +233,23 @@ jobs:
           make -f Makefile.tests -j"$(nproc)"
           ./build-tests/ch_tests
 
+      # Конфиги для архива генерирует САМ плагин: dump_defaults зовёт тот же
+      # ConfigService.LoadOrCreate, что и первый запуск на сервере. Отдельный
+      # генератор рано или поздно разошёлся бы с настоящим, и разошёлся бы молча.
+      - name: Дефолтные конфиги для архива
+        working-directory: metamod
+        run: |
+          set -euo pipefail
+          make -f Makefile.tests dump-defaults -j"$(nproc)"
+          ./build-tests/dump_defaults configs-default
+          ls -la configs-default
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: metamod-configs
+          path: metamod/configs-default
+          if-no-files-found: error
+
   metamod-build:
     needs: [version, metamod-core]
     runs-on: ${{ matrix.os }}
@@ -356,8 +373,8 @@ jobs:
           path: ConnectHistory/metamod/build/package/cs2
           if-no-files-found: error
 
-  # Обе ОС в ОДНОМ архиве: владелец сервера скачивает один файл и не гадает,
-  # какой из двух ему нужен.
+  # По архиву на ОС. Раньше обе лежали в одном файле: он весил вдвое больше нужного,
+  # и половина его содержимого не могла запуститься на машине, куда его распаковали.
   metamod-package:
     needs: [version, metamod-build]
     runs-on: ubuntu-latest
@@ -369,41 +386,77 @@ jobs:
           path: trees
           pattern: metamod-tree-*
 
-      - name: Merge and zip
+      - uses: actions/download-artifact@v4
+        with:
+          name: metamod-configs
+          path: configs-default
+
+      - name: Zip per OS
         run: |
           set -euo pipefail
-          mkdir -p merged
-          for tree in trees/metamod-tree-*; do
-            cp -a "$tree"/. merged/
+
+          declare -A BINARY=(
+            [linux]="addons/ConnectHistory/bin/linuxsteamrt64/ConnectHistory.so"
+            [windows]="addons/ConnectHistory/bin/win64/ConnectHistory.dll"
+          )
+          declare -A FOREIGN=(
+            [linux]="addons/ConnectHistory/bin/win64"
+            [windows]="addons/ConnectHistory/bin/linuxsteamrt64"
+          )
+
+          for slug in linux windows; do
+            tree="trees/metamod-tree-$slug"
+            test -d "$tree" || { echo "::error::нет дерева $tree"; exit 1; }
+
+            # Конфиги кладём В АРХИВ, а не надеемся, что плагин создаст их сам:
+            # каталог сервера бывает только для чтения, а без Settings.json плагин
+            # работает вхолостую и в базу не пишет ничего.
+            mkdir -p "$tree/addons/ConnectHistory/configs"
+            cp -a configs-default/. "$tree/addons/ConnectHistory/configs/"
+
+            ZIP="$PWD/ConnectHistory_metamod_${slug}_${PLUGIN_VERSION}.zip"
+            (cd "$tree" && zip -rq "$ZIP" .)
+
+            for required in \
+              "${BINARY[$slug]}" \
+              "addons/metamod/ConnectHistory.vdf" \
+              "addons/ConnectHistory/configs/Settings.json" \
+              "addons/ConnectHistory/configs/Messages.json" \
+              "addons/ConnectHistory/GeoLite2-Country.mmdb" \
+              "addons/ConnectHistory/GeoLite2-City.mmdb"
+            do
+              unzip -l "$ZIP" | grep -q -F "$required" \
+                || { echo "::error::в архиве $slug нет $required"; exit 1; }
+            done
+
+            # Чужая ОС в архиве — это половина веса, которая никогда не запустится
+            if unzip -l "$ZIP" | grep -q -F "${FOREIGN[$slug]}"; then
+              echo "::error::в архиве $slug оказались бинарники другой ОС"
+              exit 1
+            fi
+
+            # Путь внутри VDF — KeyValues, где обратный слэш начинает escape.
+            # Собранный на Windows VDF с '\' указывает в никуда.
+            vdf=$(unzip -p "$ZIP" addons/metamod/ConnectHistory.vdf)
+            echo "$vdf"
+            case "$vdf" in
+              *'\'*) echo "::error::в VDF архива $slug обратные слэши"; exit 1 ;;
+            esac
+
+            # Шаблон конфига едет в релиз намеренно, но ТОЛЬКО с пустым паролем
+            if unzip -p "$ZIP" addons/ConnectHistory/configs/Settings.json \
+               | grep -qE '"Password"[[:space:]]*:[[:space:]]*"[^"]+"'; then
+              echo "::error::в Settings.json архива $slug непустой пароль"
+              exit 1
+            fi
           done
 
-          find merged -type f | sort
-
-          ZIP="ConnectHistory_metamod_${PLUGIN_VERSION}.zip"
-          (cd merged && zip -rq "../$ZIP" .)
-
-          # Архив с одной ОС выглядит рабочим до первой установки
-          for required in \
-            "addons/ConnectHistory/bin/win64/ConnectHistory.dll" \
-            "addons/ConnectHistory/bin/linuxsteamrt64/ConnectHistory.so" \
-            "addons/metamod/ConnectHistory.vdf" \
-            "addons/ConnectHistory/GeoLite2-Country.mmdb" \
-            "addons/ConnectHistory/GeoLite2-City.mmdb"
-          do
-            unzip -l "$ZIP" | grep -q -F "$required" \
-              || { echo "::error::в архиве нет $required"; exit 1; }
-          done
-
-          # Конфиг содержит пароль от базы и в релиз попадать не должен никогда
-          if unzip -l "$ZIP" | grep -q -F 'Settings.json'; then
-            echo "::error::в архиве оказался Settings.json — он содержит пароль"
-            exit 1
-          fi
+          ls -la ConnectHistory_metamod_*.zip
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-metamod
-          path: ConnectHistory_metamod_${{ needs.version.outputs.version }}.zip
+          path: ConnectHistory_metamod_*_${{ needs.version.outputs.version }}.zip
           if-no-files-found: error
 
   publish:
