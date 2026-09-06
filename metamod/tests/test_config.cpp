@@ -260,3 +260,54 @@ TEST_CASE("Повторный запуск по существующему пу�
     // дефолтами: каталог уже есть, и создавать заново там нечего.
     CHECK(service.LoadOrCreate(nested).displayTimeZone == "+05:00");
 }
+
+// --- Номер сервера переехал в секцию Server (3.0.1) ---
+//
+// Ошибиться здесь дорого: номер сервера — это ключ, по которому разделяются
+// истории разных серверов. Молча сбросить его в 1 на обновлении означает
+// слить их в одну, и заметно это станет только по кривому отчёту.
+
+TEST_CASE("Номер сервера читается из секции Server") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    Write(dir.File("Settings.json"), "{ \"Server\": { \"Id\": 7 } }");
+
+    CHECK(service.LoadOrCreate(dir.Path()).serverId == 7);
+}
+
+TEST_CASE("Конфиг до 3.0.1 с ServerId в корне продолжает работать") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    Write(dir.File("Settings.json"), "{ \"ServerId\": 4 }");
+
+    CHECK(service.LoadOrCreate(dir.Path()).serverId == 4);
+}
+
+TEST_CASE("При обоих написаниях выигрывает Server.Id") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    Write(dir.File("Settings.json"), "{ \"ServerId\": 4, \"Server\": { \"Id\": 9 } }");
+
+    CHECK(service.LoadOrCreate(dir.Path()).serverId == 9);
+}
+
+TEST_CASE("Конфиг по умолчанию задаёт номер сервера в новом месте") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    service.LoadOrCreate(dir.Path());
+
+    const nlohmann::json parsed =
+        nlohmann::json::parse(ch::StripJsonExtras(Read(dir.File("Settings.json"))));
+
+    REQUIRE(parsed.contains("Server"));
+    CHECK(parsed["Server"]["Id"] == 1);
+    CHECK_FALSE(parsed.contains("ServerId"));
+}

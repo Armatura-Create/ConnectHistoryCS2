@@ -31,7 +31,8 @@ public sealed partial class ConfigService
             "ServerId": {
               "type": "integer",
               "minimum": 1,
-              "description": "Номер сервера в таблице ch_servers. У разных серверов обязан отличаться."
+              "deprecated": true,
+              "description": "Устарело, переехало в Server.Id. Читается ради конфигов до 3.0.1; при наличии обоих выигрывает Server.Id."
             },
             "DefaultLang": {
               "type": "string",
@@ -46,6 +47,11 @@ public sealed partial class ConfigService
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "Id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Номер сервера в таблице ch_servers. У разных серверов обязан отличаться."
+                },
                 "PublicAddress": {
                   "type": "string",
                   "description": "Публичный адрес сервера: \"ip:port\" или \"host:port\". Пусто — определять автоматически (ConVar ip часто отдаёт 0.0.0.0, такое значение отбраковывается).",

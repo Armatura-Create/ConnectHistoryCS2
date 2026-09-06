@@ -297,13 +297,18 @@ Config ConfigService::LoadOrCreate(const std::string& configDirectory) {
             }
         } else {
             Read(parsed, "Debug", &config.debug);
-            Read(parsed, "ServerId", &config.serverId);
             Read(parsed, "DefaultLang", &config.defaultLang);
             Read(parsed, "DisplayTimeZone", &config.displayTimeZone);
 
             const json empty = json::object();
 
+            // Номер сервера жил в корне конфига до 3.0.1. Старое место читается
+            // ПЕРВЫМ, а Server.Id перекрывает его: иначе обновление плагина
+            // тихо сбросило бы номер в 1 и слило историю двух серверов в одну.
+            Read(parsed, "ServerId", &config.serverId);
+
             const json& server = Section(parsed, "Server", empty);
+            Read(server, "Id", &config.serverId);
             Read(server, "PublicAddress", &config.server.publicAddress);
 
             const json& database = Section(parsed, "Database", empty);

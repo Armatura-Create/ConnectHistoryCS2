@@ -127,10 +127,11 @@ Key options:
 
 ```jsonc
 {
-  "ServerId": 1,              // must differ between servers
   "DisplayTimeZone": "UTC",   // what players see: "Europe/Moscow", "UTC" or "Local".
                               // The database always stores UTC — this never affects it.
   "Server": {
+    "Id": 1,                  // must differ between servers. Was a top-level "ServerId"
+                              // before 3.0.1; the old spelling is still read.
     "PublicAddress": ""       // "ip:port" or "host:port". Empty means auto-detect, but
                               // the server process does not know its own public address:
                               // ConVar ip returns the socket bind address, usually 0.0.0.0.

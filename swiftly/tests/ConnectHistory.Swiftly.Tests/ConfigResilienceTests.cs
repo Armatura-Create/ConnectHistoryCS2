@@ -132,4 +132,67 @@ public class ConfigResilienceTests : IDisposable
         Assert.False(mode.HasFlag(UnixFileMode.GroupRead));
         Assert.False(mode.HasFlag(UnixFileMode.OtherRead));
     }
+    // --- Номер сервера переехал в секцию Server (3.0.1) ---
+    //
+    // Ошибиться здесь дорого: номер сервера — ключ, по которому разделяются истории
+    // разных серверов. Молча сбросить его в 1 на обновлении означает слить их в одну,
+    // и заметно это станет только по кривому отчёту.
+
+    [Fact]
+    public void ServerId_IsReadFromTheServerSection()
+    {
+        Load();
+        File.WriteAllText(Path.Combine(ConfigDir, "Settings.json"),
+            "{ \"Server\": { \"Id\": 7 } }");
+
+        Assert.Equal(7, Load().ServerId);
+    }
+
+    [Fact]
+    public void ServerId_AtTheRoot_StillWorksForConfigsOlderThan301()
+    {
+        Load();
+        File.WriteAllText(Path.Combine(ConfigDir, "Settings.json"), "{ \"ServerId\": 4 }");
+
+        Assert.Equal(4, Load().ServerId);
+    }
+
+    [Fact]
+    public void ServerId_WhenBothSpellingsArePresent_TheSectionWins()
+    {
+        Load();
+        File.WriteAllText(Path.Combine(ConfigDir, "Settings.json"),
+            "{ \"ServerId\": 4, \"Server\": { \"Id\": 9 } }");
+
+        Assert.Equal(9, Load().ServerId);
+    }
+
+    [Fact]
+    public void ServerId_WhenAbsentEverywhere_FallsBackToOne()
+    {
+        Load();
+        File.WriteAllText(Path.Combine(ConfigDir, "Settings.json"), "{ }");
+
+        Assert.Equal(1, Load().ServerId);
+    }
+
+    [Fact]
+    public void DefaultSettings_PutTheServerIdInTheNewPlace()
+    {
+        Load();
+
+        // Дефолтный файл содержит //-комментарии — читаем его теми же
+        // послаблениями, что и сам плагин
+        using var parsed = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(ConfigDir, "Settings.json")),
+            new JsonDocumentOptions
+            {
+                CommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true
+            });
+
+        Assert.Equal(1, parsed.RootElement.GetProperty("Server").GetProperty("Id").GetInt32());
+        Assert.False(parsed.RootElement.TryGetProperty("ServerId", out _));
+    }
+
 }

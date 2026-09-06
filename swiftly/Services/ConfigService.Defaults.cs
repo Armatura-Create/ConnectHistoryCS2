@@ -13,10 +13,9 @@ public sealed partial class ConfigService
     internal static SettingsConfig CreateDefaultSettings() => new()
     {
         Debug = false,
-        ServerId = 1,
         DefaultLang = "RU",
         DisplayTimeZone = "UTC",
-        Server = new ServerConfig(),
+        Server = new ServerConfig { Id = 1 },
         Database = new DatabaseConfig
         {
             Host = "127.0.0.1",
@@ -103,7 +102,9 @@ public sealed partial class ConfigService
             .AppendLine("    nicknames, SteamIDs and player IPs travel the network in clear text.")
             .AppendLine()
             .AppendLine("MAIN SETTINGS")
-            .AppendLine("  ServerId               - server number. MUST differ between servers.")
+            .AppendLine("  Server.Id              - server number. MUST differ between servers.")
+            .AppendLine("                           Was a top-level ServerId before 3.0.1; the old")
+            .AppendLine("                           spelling is still read, so old configs keep working.")
             .AppendLine("  Debug                  - verbose log (prints SteamIDs, nicknames and player IPs).")
             .AppendLine("  DisplayTimeZone        - the time zone PLAYERS see times in:")
             .AppendLine("                           \"Europe/Moscow\", \"UTC\" or \"Local\".")

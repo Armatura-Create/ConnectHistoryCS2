@@ -185,7 +185,9 @@ public sealed partial class ConfigService
         return new Config
         {
             Debug = s.Debug,
-            ServerId = s.ServerId,
+            // Server.Id перекрывает устаревший ServerId из корня; если нет ни того,
+            // ни другого — 1, как было до появления настройки.
+            ServerId = s.Server?.Id ?? s.ServerId ?? 1,
             DefaultLang = string.IsNullOrWhiteSpace(s.DefaultLang) ? "RU" : s.DefaultLang,
             DisplayTimeZone = string.IsNullOrWhiteSpace(s.DisplayTimeZone) ? "UTC" : s.DisplayTimeZone,
             Server = s.Server ?? new ServerConfig(),
