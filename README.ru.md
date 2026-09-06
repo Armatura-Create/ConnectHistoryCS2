@@ -2,7 +2,9 @@
 
 [English](README.md) | **Русский**
 
-[![CI](https://github.com/Armatura-Create/ConnectHistoryCS2/actions/workflows/ci.yml/badge.svg)](https://github.com/Armatura-Create/ConnectHistoryCS2/actions/workflows/ci.yml)
+[![CI CSSharp](https://github.com/Armatura-Create/ConnectHistoryCS2/actions/workflows/ci-cssharp.yml/badge.svg)](https://github.com/Armatura-Create/ConnectHistoryCS2/actions/workflows/ci-cssharp.yml)
+[![CI SwiftlyS2](https://github.com/Armatura-Create/ConnectHistoryCS2/actions/workflows/ci-swiftly.yml/badge.svg)](https://github.com/Armatura-Create/ConnectHistoryCS2/actions/workflows/ci-swiftly.yml)
+[![CI Metamod](https://github.com/Armatura-Create/ConnectHistoryCS2/actions/workflows/ci-metamod.yml/badge.svg)](https://github.com/Armatura-Create/ConnectHistoryCS2/actions/workflows/ci-metamod.yml)
 [![Release](https://img.shields.io/github/v/release/Armatura-Create/ConnectHistoryCS2?logo=github&color=success)](https://github.com/Armatura-Create/ConnectHistoryCS2/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Armatura-Create/ConnectHistoryCS2/total?logo=github&color=success)](https://github.com/Armatura-Create/ConnectHistoryCS2/releases)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
@@ -12,9 +14,23 @@
 [![GeoLite2](https://img.shields.io/badge/GeoLite2-в%20архиве%20%2F%20авто--обновление-009688)](#сборка)
 [![License](https://img.shields.io/badge/License-GPL--3.0-blue)](LICENSE)
 
-История подключений и аналитика игроков для CounterStrikeSharp / CS2. Каждая сессия
-пишется в MySQL вместе с картой, гео, игровыми итогами и качеством связи — готовые
-данные для веб-панели.
+История подключений и аналитика игроков для CS2. Каждая сессия пишется в MySQL
+вместе с картой, гео, игровыми итогами и качеством связи — готовые данные
+для веб-панели.
+
+**Три реализации под три платформы, одна схема базы.** Плагин существует отдельно
+под CounterStrikeSharp, SwiftlyS2 и нативным Metamod:Source. Код у них не общий —
+общая схема, и все три пишут в одни таблицы. Можно ставить разные плагины
+на разные серверы и строить один отчёт.
+
+| Платформа | Требования | Архив | Куда ставится |
+|---|---|---|---|
+| **CounterStrikeSharp** | CSSharp ≥ 1.0.369 (значит, и Metamod:Source) | `ConnectHistory_cssharp_<версия>.zip` | `addons/counterstrikesharp/plugins/ConnectHistory/` |
+| **SwiftlyS2** | SwiftlyS2 ≥ 1.4.9, Metamod **не нужен** | `ConnectHistory_swiftly_<версия>.zip` | `addons/swiftlys2/plugins/ConnectHistory/` |
+| **Metamod:Source** | только Metamod:Source | `ConnectHistory_metamod_<версия>.zip` | `addons/ConnectHistory/` |
+
+Нативная цель не собирает `score` и пинг — почему именно так и что ещё
+отличается, написано в [«Расхождения между целями»](docs/DATABASE.md#расхождения-между-целями).
 
 ## Возможности
 
@@ -29,11 +45,16 @@
 
 ## Установка
 
-> Нужны **CounterStrikeSharp v1.0.369+** и **MySQL 5.7 / 8.0+ (или MariaDB 10.4+)**.
-> v1.0.369 — первая версия на .NET 10, а плагин собран под `net10.0`.
+> Нужен **MySQL 5.7 / 8.0+ (или MariaDB 10.4+)**. Остальное зависит от платформы —
+> см. таблицу выше.
 
-1. Скачайте `ConnectHistory.zip` из [последнего релиза](https://github.com/Armatura-Create/ConnectHistoryCS2/releases/latest)
-   и распакуйте в корень игрового сервера:
+1. Скачайте архив своей платформы из
+   [последнего релиза](https://github.com/Armatura-Create/ConnectHistoryCS2/releases/latest)
+   и распакуйте в корень игрового сервера. Структура каталогов уже внутри,
+   вместе с базами GeoLite2.
+
+<details>
+<summary>CounterStrikeSharp</summary>
 
 ```
 addons/counterstrikesharp/plugins/ConnectHistory/
@@ -44,16 +65,54 @@ addons/counterstrikesharp/plugins/ConnectHistory/
 ├── GeoLite2-Country.mmdb
 └── GeoLite2-City.mmdb
 ```
+</details>
+
+<details>
+<summary>SwiftlyS2</summary>
+
+```
+addons/swiftlys2/plugins/ConnectHistory/
+├── ConnectHistory.dll
+├── MySqlConnector.dll
+├── MaxMind.GeoIP2.dll
+├── MaxMind.Db.dll
+├── GeoLite2-Country.mmdb
+└── GeoLite2-City.mmdb
+```
+</details>
+
+<details>
+<summary>Metamod:Source</summary>
+
+Windows и Linux лежат в одном архиве — лишний каталог просто не используется.
+
+```
+addons/metamod/ConnectHistory.vdf
+addons/ConnectHistory/
+├── bin/win64/ConnectHistory.dll
+├── bin/linuxsteamrt64/ConnectHistory.so
+├── GeoLite2-Country.mmdb
+└── GeoLite2-City.mmdb
+```
+</details>
 
 2. Запустите сервер — плагин сам создаст конфиги и таблицы в базе.
-3. Заполните секцию `Database` в `Settings.json` и выполните `css_ch_reload`.
+3. Заполните секцию `Database` в `Settings.json` и перезагрузите конфигурацию
+   (`css_ch_reload`, `sw_ch_reload` или `ch_reload` — по платформе).
 
 В `Settings.json` лежит пароль от базы, поэтому плагин держит файл с правами `600`
 и никогда не кладёт его в релизный архив.
 
 ## Конфигурация
 
-`csgo/addons/counterstrikesharp/configs/plugins/ConnectHistory/`
+| Платформа | Каталог конфигов |
+|---|---|
+| CounterStrikeSharp | `csgo/addons/counterstrikesharp/configs/plugins/ConnectHistory/` |
+| SwiftlyS2 | `csgo/addons/swiftlys2/configs/plugins/ConnectHistory/` |
+| Metamod:Source | `csgo/addons/ConnectHistory/configs/` |
+
+Формат файлов одинаковый: `Settings.json` и `Messages.json` переносятся между
+платформами без правок.
 
 | Файл | Что в нём |
 |---|---|
@@ -95,12 +154,16 @@ addons/counterstrikesharp/plugins/ConnectHistory/
 
 ## Команды
 
-| Команда | Права | Действие |
-|---|---|---|
-| `css_ch_status` | `@css/root` | связь с базой, размер очереди, последняя ошибка |
-| `css_ch_reload` | `@css/root` | перечитать конфигурацию |
-| `css_playtime` | любой игрок | своё наигранное время и число заходов |
-| `css_lastseen` | любой игрок | свои последние сессии |
+| Действие | CounterStrikeSharp | SwiftlyS2 | Metamod |
+|---|---|---|---|
+| связь с базой, очередь, последняя ошибка | `css_ch_status` (`@css/root`) | `sw_ch_status` | `ch_status` (консоль сервера) |
+| перечитать конфигурацию | `css_ch_reload` (`@css/root`) | `sw_ch_reload` | `ch_reload` (консоль сервера) |
+| наигранное время | `css_playtime` (игрок) | `sw_playtime` (игрок) | `ch_playtime <steamid64>` (консоль) |
+| последние заходы | `css_lastseen` (игрок) | `sw_lastseen` (игрок) | `ch_lastseen <steamid64>` (консоль) |
+
+В нативной цели команды игрока сделаны консольными: отправка сообщения конкретному
+игроку идёт через UserMessage с протобуфами SDK, и «почти работающая» команда,
+печатающая ответ не туда, хуже честной консольной.
 
 ## База данных
 
@@ -122,16 +185,13 @@ GRANT SELECT, INSERT, UPDATE, CREATE, INDEX, ALTER ON connect_history.* TO 'ch_p
 
 ## Сборка
 
+Каждая цель собирается отдельно.
+
 ```bash
 export PATH="$HOME/.dotnet:$PATH"
-./build.sh            # restore, сборка, тесты, архив в bin/Release/net10.0/ConnectHistory.zip
-```
 
-Или руками:
-
-```bash
-dotnet build -c Release      # заодно собирает zip
-dotnet test                  # xUnit
+cd cssharp && ./build.sh      # тесты + архив в bin/Release/net10.0/
+cd swiftly && ./build.sh      # то же самое
 ```
 
 Интеграционные тесты с MySQL пропускаются, пока не задан `CH_TEST_MYSQL`:
@@ -139,8 +199,18 @@ dotnet test                  # xUnit
 ```bash
 docker run --rm -d -p 3399:3306 -e MYSQL_ROOT_PASSWORD=test -e MYSQL_DATABASE=ch mysql:8
 export CH_TEST_MYSQL="server=127.0.0.1;port=3399;user=root;password=test;database=ch"
-dotnet test
+dotnet test cssharp/ConnectHistory.sln
 ```
+
+Нативная цель разделена надвое. Ядро не знает ни про hl2sdk, ни про MySQL
+и проверяется на любой машине за секунду:
+
+```bash
+cd metamod && make -f Makefile.tests -j8 && ./build-tests/ch_tests
+```
+
+Сборка самого плагина требует hl2sdk, Metamod:Source и статического клиента
+MariaDB — она живёт в CI. Подробности: [metamod/README.md](metamod/README.md).
 
 ## Благодарности
 

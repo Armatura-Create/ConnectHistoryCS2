@@ -1,7 +1,31 @@
 # CLAUDE.md
 
-Плагин **ConnectHistory** для CounterStrikeSharp (CS2): история подключений и статистика
-игроков в MySQL.
+**ConnectHistory** — история подключений и статистика игроков CS2 в MySQL,
+в **трёх независимых реализациях**:
+
+| Каталог | Платформа | Язык | Metamod нужен? |
+|---|---|---|---|
+| `cssharp/` | CounterStrikeSharp ≥ 1.0.369 | C# / net10.0 | да (CSSharp сам его плагин) |
+| `swiftly/` | SwiftlyS2 ≥ 1.4.9 | C# / net10.0 | **нет**, свой лоадер через `gameinfo.gi` |
+| `metamod/` | Metamod:Source | C++17 | да, это и есть нативный MM:S-плагин |
+
+**Код по целям не переиспользуется — он продублирован сознательно** (решение владельца:
+цели должны развиваться независимо). Общее у них ровно одно:
+
+> **`docs/DATABASE.md` — контракт.** Три реализации обязаны писать одну и ту же схему,
+> и запросы из этого документа работают одинаково независимо от того, каким плагином
+> записана строка. Любое расхождение фиксируется в разделе
+> «Расхождения между целями» — молчаливое расхождение хуже отсутствия фичи.
+
+Общие на репозиторий также: `GeoIP/` (одна копия баз GeoLite2 на всех),
+`docs/`, `LICENSE`, `README*.md`.
+
+**Правило правки инварианта: он правится во всех трёх целях или ни в одной.**
+Компилятор об этом не напомнит — напомнит только этот файл.
+
+Репозиторий: <https://github.com/Armatura-Create/ConnectHistoryCS2>, лицензия GPL-3.0-or-later.
+
+## Цель `cssharp/` — CounterStrikeSharp
 
 - `net10.0`, namespace `ConnectHistory`, `[MinimumApiVersion(369)]`
 - Зависимости: `CounterStrikeSharp.API` `1.0.369` (пин, не `*`), `MySqlConnector` `2.6.2`, `MaxMind.GeoIP2` `5.3.0`
@@ -13,17 +37,64 @@
   из 372–373 в коде не было.
 - `net10.0` — не выбор, а требование: CSSharp с v1.0.369 работает на .NET 10.
 - SDK стоит в `~/.dotnet` (не в PATH по умолчанию): `export PATH="$HOME/.dotnet:$PATH"`
-- Репозиторий: <https://github.com/Armatura-Create/ConnectHistoryCS2>, лицензия GPL-3.0-or-later
+
+## Цель `swiftly/` — SwiftlyS2
+
+- `net10.0`, тот же namespace, пакет `SwiftlyS2.CS2` версии из `swiftly/Swiftly.props`
+- SwiftlyS2 **не надстройка над Metamod**: подключается строкой
+  `Game csgo/addons/swiftlys2` в `gameinfo.gi`. Это альтернативный лоадер, а не слой.
+- То же правило минимальной версии: `MinimumAPIVersion` в `PluginMetadata` обязан
+  совпадать с версией пакета (`ApiVersionTests`). Версия вынесена в `Swiftly.props`,
+  потому что нужна и плагину, и тестовому проекту.
+- **`PluginMetadata` — атрибут**, а значения атрибутов обязаны быть константами
+  компиляции. Версию туда подставляет сгенерированный MSBuild `PluginVersion.g.cs`
+  (цель `GeneratePluginVersion`) — правило «версию руками нигде не поднимаем» в силе.
+- **`SwiftlyS2.CS2.dll` собрана только под x64** (выделенный сервер CS2 другой не бывает).
+  На arm64-машине она не грузится, поэтому тесты, упоминающие её типы, пропускаются
+  по `SwiftlyRuntime.Available`. `Skip.IfNot` в начале тела НЕ спасает: JIT разрешает
+  типы метода до выполнения первой строки — обращения вынесены во вложенные классы
+  `Bound`, а чистые помощники в `PluginText`. В CI (x64) пропусков нет.
+- Каталог конфигов приходит целиком из `Core.Configuration.BasePath`, спул — в
+  `Core.PluginDataDirectory` (каталог плагина перезаписывается при обновлении).
+
+## Цель `metamod/` — нативный C++
+
+- C++17, ядро в `src/core` **не знает ни про hl2sdk, ни про MySQL**
+- **Никаких сигнатур, смещений и детуров.** Всё берётся хуками Metamod, игровыми
+  событиями и интерфейсами движка. Цена — `score` и `ping_*` остаются `NULL`
+  (см. `docs/DATABASE.md`), выгода — плагин не ломается на обновлении игры.
+- Итоги матча копятся из игровых событий (`player_death`, `player_hurt`, `round_mvp`,
+  `round_end`), а не читаются из полей контроллера: для контроллера нужен указатель
+  на `CGameEntitySystem` по захардкоженному смещению.
+- **`.mmdb` открывается только из памяти** (`ch_mmdb_open_memory`): у `libmaxminddb`
+  есть исключительно `mmap`, а страничный отказ в игровом процессе — это SIGBUS
+  и смерть сервера без стека. Обёртка включает `maxminddb.c` целиком, чтобы
+  не трогать сабмодуль; при обновлении вендора сверять последовательность
+  инициализации — компилятор о её изменении промолчит.
+- `DisplayTimeZone` понимает `UTC`, `Local` и смещение `+03:00`; имён IANA нет
+  (нужна tzdata или правка глобальной `TZ` процесса).
+- Вендоры сабмодулями: `nlohmann/json`, `doctest`, `libmaxminddb`,
+  `mariadb-connector-c` (LGPL-2.1; `libmysqlclient` не берём — его
+  GPL-2.0-with-FOSS-exception конфликтует с GPL-3).
+- `AMBuildScript` и `configure.py` взяты из CS2Fixes (GPL-3.0) и адаптированы.
 
 ## Команды
 
 ```bash
-cd cssharp
-./build.sh              # restore -> тесты -> Release -> bin/Release/net10.0/ConnectHistory_cssharp_<version>.zip
-./build.sh 2.3.0        # то же, но с явной версией сборки
-dotnet build            # обычная сборка
-dotnet test             # xUnit; интеграционные тесты MySQL пропускаются без CH_TEST_MYSQL
+export PATH="$HOME/.dotnet:$PATH"
+
+cd cssharp && ./build.sh          # restore -> тесты -> Release -> ConnectHistory_cssharp_<version>.zip
+cd swiftly && ./build.sh 2.3.0    # то же с явной версией
+
+dotnet test cssharp/ConnectHistory.sln
+dotnet test swiftly/ConnectHistory.sln
+
+# Ядро C++-цели: без hl2sdk, без MySQL, секунда на любой машине
+cd metamod && make -f Makefile.tests -j8 && ./build-tests/ch_tests
 ```
+
+Сборка самого MM:S-плагина требует hl2sdk, Metamod:Source и статического клиента
+MariaDB — она живёт в CI (`metamod/README.md` описывает и локальный путь под Linux).
 
 Живая проверка схемы и пути записи (реально проверяет DDL, идемпотентность закрытия
 сессии и пометку оборванных сессий):
@@ -36,12 +107,26 @@ dotnet test
 
 ## CI/CD
 
-`.github/workflows/ci-cssharp.yml` — push в `main` и любой PR, затрагивающий `cssharp/`
-или `GeoIP/`: restore, сборка, тесты.
-`.github/workflows/release.yml` — тег `v*` (или ручной запуск с указанием тега).
-Версия вычисляется один раз в job `version` и раздаётся всем целям.
+По воркфлоу на цель, каждый с фильтром по путям (сборка C++ занимает минуты,
+и гонять её на правку в `swiftly/` незачем):
 
-Оба поднимают сервис-контейнер MySQL 8 и передают `CH_TEST_MYSQL`: интеграционные тесты
+- `ci-cssharp.yml`, `ci-swiftly.yml` — restore, сборка, тесты на MySQL 8
+- `ci-metamod.yml` — две работы: `core` (тесты ядра обычным компилятором, секунды)
+  и `build` (hl2sdk + Metamod + статический MariaDB в контейнере SteamRT3
+  и на windows-latest)
+
+`release.yml` — тег `v*` (или ручной запуск). Версия вычисляется ОДИН раз
+в job `version` и раздаётся всем целям: три плагина под одним тегом обязаны
+представляться сервером одним номером. В C# её подставляет MSBuild,
+в C++ — генерируемый `src/mm/version.h`.
+
+Обратная сторона фильтров по путям: PR, не трогающий цель, не даёт по ней ни одного
+статуса — такой чек нельзя делать обязательным в branch protection.
+
+Linux-бинарь MM:S собирается ТОЛЬКО в контейнере Steam Runtime 3: ABI выделенного
+сервера CS2 именно оттуда, и сборка обычным ubuntu-раннером на сервере не загрузится.
+
+C#-цели поднимают сервис-контейнер MySQL 8 и передают `CH_TEST_MYSQL`: интеграционные тесты
 проверяют DDL, идемпотентность закрытия сессии и хранение времени в UTC — на моках
 это не проверяется, а без переменной они просто пропускаются и молча ничего не доказывают.
 
@@ -58,7 +143,7 @@ dotnet test
 
 Тесты красные — релиз не публикуется.
 
-Локально ту же цепочку прогоняет `cssharp/build.sh`.
+Локально ту же цепочку прогоняет `cssharp/build.sh` (и `swiftly/build.sh`).
 
 Анализаторы (`EnableNETAnalyzers` + `AnalysisMode=Recommended`) включены постоянно, сборка
 держится на нуле предупреждений. `CA1716` и `CA1859` заглушены осознанно в `.csproj`.
@@ -84,14 +169,17 @@ dotnet test
 
 ## Архитектура
 
-`ConnectHistory` — `sealed partial class : BasePlugin`, разнесённый по файлам:
+### C#-цели (`cssharp/`, `swiftly/`)
+
+Раскладка файлов у обеих одинаковая — так их проще сверять глазами.
+`ConnectHistory` — `sealed partial class`, разнесённый по файлам:
 
 | Файл | Что в нём |
 |---|---|
-| `ConnectHistory.cs` | `Load`/`Unload`, сборка сервисов, таймеры, `ResolveModuleVersion` |
+| `ConnectHistory.cs` / `ConnectHistoryPlugin.cs` | `Load`/`Unload`, сборка сервисов, таймеры, резолв версии |
 | `Events/ConnectHistory.Events.cs` | единственная точка регистрации хендлеров + `SafeEvent` |
 | `Events/ConnectHistory.PlayerEvents.cs` | открытие/закрытие сессии, раунды, смена команды |
-| `Commands/ConnectHistory.Commands.cs` | `css_ch_status`, `css_ch_reload`, `css_playtime`, `css_lastseen` |
+| `Commands/ConnectHistory.Commands.cs` | `*_ch_status`, `*_ch_reload`, `*_playtime`, `*_lastseen` |
 | `Services/ConfigService*.cs` | загрузка JSON, дефолты, JSON Schema |
 | `Services/DatabaseService.cs` | строка подключения, пул, `PingAsync` |
 | `Services/SchemaService.cs` | DDL, миграции, пометка оборванных сессий |
@@ -102,11 +190,35 @@ dotnet test
 | `Services/GeoIpService.cs` | MaxMind, `FileAccessMode.Memory` |
 | `Utils/` | логгер, `IpUtil`, `SteamIdUtil`, `SqlSanitizer`, `ChatFormat`, `TimeZoneResolver` |
 
+В `swiftly/` дополнительно `Utils/PluginText.cs` — чистые помощники (обрезка ника,
+разбор номера версии). Они вынесены из класса плагина не ради красоты: тип, унаследованный
+от `BasePlugin`, тянет загрузку x64-сборки SwiftlyS2, и на arm64 их нельзя было бы
+проверить вовсе.
+
 DI-контейнера нет: сервисы создаются вручную в `Load()`. Сервисы не наследуют `BasePlugin`
-и потому не имеют доступа к `AddTimer` — таймеры живут в `ConnectHistory.cs`. Не тащи
+и потому не имеют доступа к таймерам — те живут в главном файле плагина. Не тащи
 `BasePlugin` внутрь `Services/`.
 
-### Путь данных
+### Нативная цель (`metamod/`)
+
+Разделение проходит по одной линии: **знает ли код про движок**.
+
+| Каталог | Что в нём | Проверяется |
+|---|---|---|
+| `src/core/` | конфиг, тексты SQL, сессии, писатель, спул, GeoIP, чтение | локально, `make -f Makefile.tests` |
+| `src/db/` | клиент MariaDB | только CI |
+| `src/mm/` | `ISmmPlugin`, хуки, игровые события, команды | только CI |
+| `tests/` | doctest поверх `src/core` | локально |
+
+Это не эстетика: hl2sdk не собирается под macOS вовсе, а почти вся логика плагина
+движка не требует. Раздельная сборка означает, что сотня тестов гоняется за секунду
+на любой машине, а не только на живом сервере.
+
+`IDatabase` — единственный интерфейс в ядре, и он оправдан ровно одним: без него
+писателя с его ретраями, спулом и идемпотентным закрытием сессии пришлось бы
+проверять только на боевой базе. Заглушка умеет падать по команде.
+
+### Путь данных (C#-цели; в нативной он тот же, но события другие)
 
 ```
 главный поток                            │ фоновый поток
@@ -129,6 +241,11 @@ EventPlayerDisconnect                    │
 Ни контроллер, ни `ConVar`, ни что-либо из движка туда не попадает.
 
 ## Инварианты, которые легко сломать
+
+Список написан на языке C#-целей, но **действует во всех трёх**: у нативной цели
+те же правила, только имена другие (`ch::SessionWriter` вместо `SessionWriter`,
+`ch_mmdb_open_memory` вместо `FileAccessMode.Memory` и так далее). Правишь инвариант —
+правь везде.
 
 - **Из фонового потока — никаких нативов.** `Utilities.*`, `ConVar.*`, `Server.*`,
   `CCSPlayerController` — только главный поток. Нарушение памяти в нативном слое убивает
@@ -241,15 +358,20 @@ EventPlayerDisconnect                    │
 ## Схема БД
 
 Шесть таблиц с префиксом из конфига: `sessions`, `players`, `nicknames`, `servers`,
-`online_snapshots`, `schema_version`. DDL живёт в `SchemaService.BuildSchema` и обязан
-оставаться идемпотентным — плагин перезагружают на живом сервере.
+`online_snapshots`, `schema_version`. DDL живёт в `SchemaService.BuildSchema`
+(в нативной цели — `ch::BuildSchema` в `core/schema_sql.cpp`) и обязан оставаться
+идемпотентным — плагин перезагружают на живом сервере.
+
+**Текст DDL совпадает во всех трёх целях до символа.** Это и есть контракт: схема,
+созданная одним плагином, обязана подойти двум другим без миграции.
 
 Внешних ключей нет сознательно: они связали бы историю с агрегатами и сделали
 невозможной чистку старых сессий без каскадов.
 
-Меняешь схему — поднимаешь `SchemaService.CurrentVersion` и добавляешь шаг в `Migrations`.
-`SchemaTests` следит, чтобы версия не отставала от лестницы миграций и чтобы каждый шаг
-был достижим.
+Меняешь схему — поднимаешь версию и добавляешь шаг в `Migrations`. **Во всех трёх целях
+разом**: `SchemaService.CurrentVersion` в C# и `ch::kSchemaVersion` в C++.
+`SchemaTests` (C#) и `test_sql.cpp` (C++) следят, чтобы версия не отставала
+от лестницы миграций и чтобы каждый шаг был достижим.
 
 Текущая версия — **3**. Шаг до 2-й чистит `ch_servers.address` от адресов привязки
 (`0.0.0.0…`), которые писала версия 1: `UPDATE`, а не `DELETE` — испорчено одно поле,
@@ -258,26 +380,42 @@ EventPlayerDisconnect                    │
 
 **Шаг миграции обязан переживать повторное применение.** У `ALTER` в MySQL нет формы
 `IF NOT EXISTS` (это MariaDB), а на свежей базе колонка уже приезжает из `BuildSchema`,
-поэтому `ApplyMigrationAsync` трактует ошибки 1050/1060/1061 («объект уже существует»)
-как «шаг применён». Условный DDL через `SET @переменную` не годится: MySqlConnector
-считает `@имя` placeholder'ом параметра, и запрос до сервера не доходит.
+поэтому `ApplyMigrationAsync` (в C++ — `IsAlreadyAppliedError`) трактует ошибки
+1050/1060/1061 («объект уже существует») как «шаг применён». Условный DDL через
+`SET @переменную` не годится: MySqlConnector считает `@имя` placeholder'ом параметра,
+и запрос до сервера не доходит.
 
 Полный контракт колонок и готовые запросы — `docs/DATABASE.md`. Он же служит документацией
 для тех, кто читает базу снаружи; модуль панели — `docs/FLUTE_MODULE.md`.
+
+**Расхождения между целями фиксируются там же, в разделе «Расхождения между целями».**
+Сейчас их три, все — следствие правила «никаких сигнатур и смещений» в нативной цели:
+`score` и `ping_*` остаются `NULL`, а `disconnect_reason_name` там имеет вид
+`REASON_<код>`. Молчаливое расхождение хуже отсутствия фичи: отчёт по нескольким
+серверам сойдётся неверно, и никто не поймёт почему.
 
 ## Логирование
 
 `ILogger` → `PluginLogger` (формат `[timestamp] [ConnectHistory] [LEVEL] msg`).
 `Debug(...)` печатает только при `Config.Debug == true` (по умолчанию **выключено** — Debug
 пишет SteamID, ники и IP игроков). Флаг читается через замыкание, поэтому подхватывается
-после `css_ch_reload`. `Console.WriteLine` напрямую не использовать.
+после перезагрузки конфигурации. `Console.WriteLine` напрямую не использовать:
+в `cssharp/` он остался исторически, в `swiftly/` логи идут через `Core.Logger`
+(и через `[LoggerMessage]`, иначе анализаторы справедливо ругаются),
+в `metamod/` — через `META_CONPRINTF`.
 
 ## Версии
 
-**Версию руками нигде не поднимаем.** `ModuleVersion` не литерал: он резолвится из
-`AssemblyInformationalVersionAttribute` собранной сборки (`ResolveModuleVersion` /
-`FormatModuleVersion`), хвост `+sha` отрезается. Источник — `<Version>` в `.csproj`
-или `./build.sh 2.1.0`. Ловится `ModuleVersionTests`.
+**Версию руками нигде не поднимаем.** Единственный источник — тег релиза; job `version`
+в `release.yml` вычисляет её один раз и раздаёт всем целям.
+
+- `cssharp/`: `ModuleVersion` резолвится из `AssemblyInformationalVersionAttribute`
+  собранной сборки (`ResolveModuleVersion` / `FormatModuleVersion`), хвост `+sha`
+  отрезается. Ловится `ModuleVersionTests`.
+- `swiftly/`: то же плюс `PluginVersion.g.cs`, который MSBuild генерирует из `<Version>` —
+  атрибуту `PluginMetadata` нужна константа времени компиляции.
+- `metamod/`: CI перезаписывает `src/mm/version.h` из тега; в репозитории лежит
+  фолбэк `0.0.0-dev`.
 
 ## Граф проекта
 
@@ -285,3 +423,6 @@ EventPlayerDisconnect                    │
 Вопросы вида «что вызывает X», «как связаны Y и Z» быстрее решать через
 `graphify query "..."`, чем полным перечитыванием файлов. После заметных изменений
 кода — `graphify <путь> --update`.
+
+Граф построен ДО разделения репозитория на три цели и путей `cssharp/`, `swiftly/`,
+`metamod/` не знает — перед тем, как на него опираться, перестрой.
