@@ -8,6 +8,8 @@
 // движком, и обращение к нему станет чтением чужой памяти.
 #pragma once
 
+#include "core/jobs.h"
+
 #include <cstdint>
 #include <map>
 #include <mutex>
@@ -63,6 +65,20 @@ public:
     // что игрок застал в ЭТОЙ сессии.
     void NoteRoundEnd() { ++_roundsPlayed; }
 
+    // Итоги матча копятся из ИГРОВЫХ СОБЫТИЙ, а не читаются из полей контроллера.
+    //
+    // Чтение контроллера потребовало бы указателя на CGameEntitySystem, добываемого
+    // захардкоженным смещением, — то есть падения сервера в очередное обновление
+    // игры. События дают те же числа и такой цены не требуют. Не покрыты ими
+    // только счёт и пинг: они остаются NULL (см. docs/DATABASE.md).
+    void NoteKill(bool headshot);
+    void NoteDeath() { ++_stats.deaths; }
+    void NoteAssist() { ++_stats.assists; }
+    void NoteDamage(int32_t health);
+    void NoteMvp() { ++_stats.mvps; }
+
+    const MatchStats& Stats() const { return _stats; }
+
     // Первая увиденная команда — это не смена, а начальное состояние.
     // now передаётся аргументом, а не берётся внутри: так метод остаётся
     // проверяемым тестом без ожиданий в реальном времени.
@@ -85,6 +101,8 @@ private:
     int32_t _pingMin = 0;
     int32_t _pingMax = 0;
     int64_t _pingSum = 0;
+
+    MatchStats _stats;
 
     int32_t _lastTeam = -1;
     int32_t _teamChanges = 0;

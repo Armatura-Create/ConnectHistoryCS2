@@ -1,0 +1,134 @@
+name: CI (Metamod:Source)
+
+# Фильтр по путям: сборка C++ с hl2sdk и протобуфами занимает минуты,
+# и гонять её на правку в cssharp/ или swiftly/ незачем.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'metamod/**'
+      - 'GeoIP/**'
+      - '.github/workflows/ci-metamod.yml'
+  pull_request:
+    paths:
+      - 'metamod/**'
+      - 'GeoIP/**'
+      - '.github/workflows/ci-metamod.yml'
+  workflow_dispatch:
+
+jobs:
+  # Ядро плагина не знает ни про hl2sdk, ни про MySQL, поэтому проверяется
+  # обычным компилятором за секунды. Здесь живут все инварианты: идемпотентность
+  # закрытия сессии, спул, разбор адреса, цвета чата, открытие .mmdb из памяти.
+  core:
+    name: Ядро (тесты)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Тесты ядра
+        working-directory: metamod
+        run: |
+          make -f Makefile.tests -j"$(nproc)"
+          ./build-tests/ch_tests
+
+  # Сборка самого плагина. Linux собирается в контейнере Steam Runtime 3:
+  # ABI выделенного сервера CS2 именно оттуда, и бинарь, собранный обычным
+  # ubuntu-раннером, на сервере не загрузится.
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux (SteamRT3)
+            container: ghcr.io/source2ze/build-containers:steamrt3
+          - os: windows-latest
+            name: Windows
+
+    env:
+      HL2SDKCS2: ${{ github.workspace }}/ConnectHistory/metamod/sdk
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: ConnectHistory
+          submodules: recursive
+          fetch-depth: 0
+
+      # hl2sdk и манифесты берём через checkout, а не сабмодулем: сабмодуль
+      # утянул бы гигабайты истории SDK в наш репозиторий навсегда.
+      - name: Checkout hl2sdk (cs2)
+        uses: actions/checkout@v4
+        with:
+          repository: alliedmodders/hl2sdk
+          ref: cs2
+          path: ConnectHistory/metamod/sdk
+          submodules: recursive
+
+      - name: Checkout hl2sdk-manifests
+        uses: actions/checkout@v4
+        with:
+          repository: alliedmodders/hl2sdk-manifests
+          path: ConnectHistory/metamod/hl2sdk-manifests
+
+      - name: Checkout Metamod:Source
+        uses: actions/checkout@v4
+        with:
+          repository: alliedmodders/metamod-source
+          ref: master
+          path: mmsource-2.0
+          submodules: recursive
+
+      - name: Checkout AMBuild
+        uses: actions/checkout@v4
+        with:
+          repository: alliedmodders/ambuild
+          path: ambuild
+
+      - name: Install AMBuild
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip setuptools
+          cd ambuild && python -m pip install .
+
+      # Клиент MariaDB линкуется статически: игровой сервер не должен зависеть
+      # от того, установлен ли libmariadb в системе и какой он версии.
+      - name: Build mariadb-connector-c
+        shell: bash
+        working-directory: ConnectHistory/metamod
+        run: |
+          set -euo pipefail
+          cmake -S vendor/mariadb-connector-c -B build-deps/mariadb \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DWITH_UNIT_TESTS=OFF \
+                -DWITH_EXTERNAL_ZLIB=OFF \
+                -DCLIENT_PLUGIN_DIALOG=OFF
+          cmake --build build-deps/mariadb --config Release --target mariadbclient
+
+          mkdir -p build-deps/lib
+          find build-deps/mariadb -name 'libmariadbclient.a' -exec cp {} build-deps/lib/ \; || true
+          find build-deps/mariadb -name 'mariadbclient.lib' -exec cp {} build-deps/lib/ \; || true
+          ls -la build-deps/lib
+
+      - name: Build plugin
+        shell: bash
+        working-directory: ConnectHistory/metamod
+        run: |
+          set -euo pipefail
+          mkdir -p build && cd build
+          python ../configure.py --enable-optimize --sdks cs2
+          ambuild
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: metamod-${{ matrix.os == 'windows-latest' && 'windows' || 'linux' }}
+          path: ConnectHistory/metamod/build/package/cs2
+          if-no-files-found: error

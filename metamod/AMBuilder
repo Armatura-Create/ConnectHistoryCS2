@@ -1,0 +1,50 @@
+# vim: set sts=2 ts=8 sw=2 tw=99 et ft=python:
+#
+# Список исходников плагина.
+#
+# Обрати внимание на разделение: src/core собирается и здесь, и локальным
+# Makefile.tests — это одно и то же ядро, просто во втором случае без SDK
+# и без MySQL. Всё, что знает про движок, лежит в src/mm и в тесты не попадает.
+import os
+
+for sdk_target in MMSPlugin.sdk_targets:
+  sdk = sdk_target.sdk
+  cxx = sdk_target.cxx
+
+  binary = MMSPlugin.HL2Library(builder, cxx, f'{MMSPlugin.metadata["name"]}.{sdk["name"]}', sdk)
+
+  binary.sources += [
+    # Ядро: движка не знает, проверяется тестами на любой машине
+    'src/core/config.cpp',
+    'src/core/config_defaults.cpp',
+    'src/core/geoip.cpp',
+    'src/core/jobs.cpp',
+    'src/core/query_service.cpp',
+    'src/core/schema_service.cpp',
+    'src/core/schema_sql.cpp',
+    'src/core/session.cpp',
+    'src/core/spool.cpp',
+    'src/core/sql_builder.cpp',
+    'src/core/writer.cpp',
+    'src/core/util/chat_format.cpp',
+    'src/core/util/ip.cpp',
+    'src/core/util/sha256.cpp',
+    'src/core/util/sql_sanitizer.cpp',
+    'src/core/util/timeutil.cpp',
+
+    # Клиент MySQL
+    'src/db/mariadb.cpp',
+
+    # Слой Metamod: единственное место, где есть обращения к движку
+    'src/mm/plugin.cpp',
+    'src/mm/events.cpp',
+    'src/mm/commands.cpp',
+
+    # libmaxminddb одним файлом-обёрткой: она же добавляет открытие базы
+    # из памяти вместо mmap, иначе страничный отказ убивает сервер SIGBUS'ом
+    'src/core/geoip_maxminddb.c',
+    'vendor/libmaxminddb/src/data-pool.c',
+  ]
+
+  nodes = builder.Add(binary)
+  MMSPlugin.binaries += [nodes]

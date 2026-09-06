@@ -19,6 +19,18 @@ void OpenSession::AddPing(int32_t ping) {
     ++_pingSamples;
 }
 
+void OpenSession::NoteKill(bool headshot) {
+    ++_stats.kills;
+    if (headshot) ++_stats.headShots;
+}
+
+void OpenSession::NoteDamage(int32_t health) {
+    // Отрицательный и абсурдный урон игнорируем: событие приходит из сети,
+    // и доверять его полям как своим нельзя
+    if (health <= 0 || health > 10000) return;
+    _stats.damage += health;
+}
+
 void OpenSession::NoteTeam(int32_t team, int64_t now) {
     if (team == _lastTeam) return;
 

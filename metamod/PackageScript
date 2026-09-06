@@ -1,0 +1,94 @@
+# vim: set sts=2 ts=8 sw=2 tw=99 et ft=python:
+#
+# Раскладка релиза: бинарь, .vdf для Metamod и базы GeoLite2 рядом с плагином.
+#
+# Конфиги В АРХИВ НЕ КЛАДЁМ: Settings.json содержит пароль от базы и создаётся
+# плагином при первом запуске с правами 600.
+import os
+
+builder.SetBuildFolder('package')
+
+class SDKPackage:
+  def __init__(self, cxx, sdk_name):
+    self.sdk_name = sdk_name
+
+    self.plugin_folder_path = os.path.join(self.sdk_name, 'addons', MMSPlugin.metadata['name'])
+    self.plugin_folder = builder.AddFolder(self.plugin_folder_path)
+
+    self.metamod_path = os.path.join(self.sdk_name, 'addons', 'metamod')
+    self.metamod = builder.AddFolder(self.metamod_path)
+
+    self.addBinFolder(cxx)
+    self.generateVDF()
+
+  def addBinFolder(self, cxx):
+    platform64_path_map = {
+      'windows': 'win64',
+      'linux': 'linuxsteamrt64',
+      'mac': 'osx64'
+    }
+
+    if cxx.target.arch == 'x86_64':
+      self.bin_path = os.path.join(self.plugin_folder_path, 'bin',
+                                   platform64_path_map[cxx.target.platform])
+    else:
+      self.bin_path = os.path.join(self.plugin_folder_path, 'bin')
+
+    self.bin = builder.AddFolder(self.bin_path)
+
+  def generateVDF(self):
+    vdf_content = '"Metamod Plugin"\n'
+    vdf_content += '{\n'
+    vdf_content += f'\t"alias"\t"{MMSPlugin.metadata["alias"]}"\n'
+    vdf_content += f'\t"file"\t"{os.path.join(os.path.relpath(self.bin_path, self.sdk_name), MMSPlugin.metadata["name"])}"\n'
+    vdf_content += '}'
+
+    builder.AddOutputFile(os.path.join(self.metamod_path,
+                                       f'{MMSPlugin.metadata["name"]}.vdf'),
+                          vdf_content.encode('utf8'))
+
+  def addBinary(self, binary):
+    (_, plugin_bin_name) = os.path.split(binary.path)
+    plugin_bin_ext = os.path.splitext(plugin_bin_name)[1]
+    builder.AddCopy(binary, os.path.join(self.bin_path,
+                                         MMSPlugin.metadata['name'] + plugin_bin_ext))
+
+  def addFile(self, file_path, result_path = None):
+    if not os.path.isabs(file_path):
+      file_path = os.path.join(builder.sourcePath, file_path)
+
+    if result_path is None:
+      result_path = os.path.join(self.plugin_folder_path, os.path.basename(file_path))
+    else:
+      result_path = os.path.join(self.plugin_folder_path, result_path)
+
+    builder.AddFolder(os.path.dirname(result_path))
+    builder.AddCopy(file_path, result_path)
+
+packages = dict()
+
+for sdk_target in MMSPlugin.sdk_targets:
+  sdk = sdk_target.sdk
+  cxx = sdk_target.cxx
+  packages[sdk['name']] = SDKPackage(cxx, sdk['name'])
+
+for task in MMSPlugin.binaries:
+  binary_filename = os.path.splitext(os.path.basename(task.binary.path))[0]
+  sdk_name = binary_filename.split('.')[-1]
+  package = packages[sdk_name]
+
+  package.addBinary(task.binary)
+  if task.debug and cxx.target.platform == 'windows':
+    package.addBinary(task.debug)
+
+  # Каталоги, которые плагин заполнит сам при первом запуске
+  builder.AddFolder(os.path.join(package.plugin_folder_path, 'configs'))
+  builder.AddFolder(os.path.join(package.plugin_folder_path, 'data'))
+
+  # Базы GeoLite2: одна копия на весь репозиторий, три цели её кладут к себе.
+  # Архив без них выглядит рабочим до первого игрока, у которого
+  # не определилась страна, — поэтому проверка их наличия стоит и в CI.
+  for database in ['GeoLite2-Country.mmdb', 'GeoLite2-City.mmdb']:
+    source = os.path.join(builder.sourcePath, '..', 'GeoIP', database)
+    if os.path.exists(source):
+      package.addFile(source)

@@ -1,0 +1,11 @@
+{
+    "name": "ConnectHistory",
+    "alias": "connecthistory",
+    "display_name": "ConnectHistory",
+    "description": "Connection history and player analytics in MySQL",
+    "author": "Armatura",
+    "url": "https://github.com/Armatura-Create/ConnectHistoryCS2",
+    "log_tag": "ConnectHistory",
+    "license": "GPL-3.0-or-later",
+    "version": "{{parsed-version}}"
+}

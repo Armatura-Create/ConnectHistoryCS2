@@ -168,3 +168,41 @@ TEST_CASE("Update правит сессию на месте") {
 
     CHECK_FALSE(registry.Update(999ull, [](ch::OpenSession&) {}));
 }
+
+TEST_CASE("Итоги матча копятся из игровых событий") {
+    // Читать поля контроллера значило бы завести указатель на CGameEntitySystem
+    // по захардкоженному смещению — то есть падение сервера в очередное
+    // обновление игры. События дают те же числа бесплатно.
+    ch::OpenSession session = NewSession();
+
+    session.NoteKill(true);
+    session.NoteKill(false);
+    session.NoteDeath();
+    session.NoteAssist();
+    session.NoteMvp();
+    session.NoteDamage(100);
+    session.NoteDamage(37);
+
+    CHECK(session.Stats().kills == 2);
+    CHECK(session.Stats().headShots == 1);
+    CHECK(session.Stats().deaths == 1);
+    CHECK(session.Stats().assists == 1);
+    CHECK(session.Stats().mvps == 1);
+    CHECK(session.Stats().damage == 137);
+
+    // Счёт этой целью не собирается — колонка остаётся NULL
+    CHECK_FALSE(session.Stats().hasScore);
+}
+
+TEST_CASE("Абсурдный урон из сети не портит статистику") {
+    // Поля события приходят по сети, и доверять им как своим нельзя
+    ch::OpenSession session = NewSession();
+
+    session.NoteDamage(0);
+    session.NoteDamage(-50);
+    session.NoteDamage(1000000);
+    CHECK(session.Stats().damage == 0);
+
+    session.NoteDamage(42);
+    CHECK(session.Stats().damage == 42);
+}

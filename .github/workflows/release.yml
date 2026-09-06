@@ -217,8 +217,173 @@ jobs:
           path: swiftly/bin/Release/net10.0/ConnectHistory_swiftly_${{ needs.version.outputs.version }}.zip
           if-no-files-found: error
 
+  # Ядро C++-цели проверяется без SDK и без MySQL — держим это отдельной
+  # работой, чтобы падение здесь было сразу понятно чем вызвано.
+  metamod-core:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Тесты ядра
+        working-directory: metamod
+        run: |
+          make -f Makefile.tests -j"$(nproc)"
+          ./build-tests/ch_tests
+
+  metamod-build:
+    needs: [version, metamod-core]
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            slug: linux
+            container: ghcr.io/source2ze/build-containers:steamrt3
+          - os: windows-latest
+            slug: windows
+
+    env:
+      HL2SDKCS2: ${{ github.workspace }}/ConnectHistory/metamod/sdk
+      PLUGIN_VERSION: ${{ needs.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ConnectHistory
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: alliedmodders/hl2sdk
+          ref: cs2
+          path: ConnectHistory/metamod/sdk
+          submodules: recursive
+
+      - uses: actions/checkout@v4
+        with:
+          repository: alliedmodders/hl2sdk-manifests
+          path: ConnectHistory/metamod/hl2sdk-manifests
+
+      - uses: actions/checkout@v4
+        with:
+          repository: alliedmodders/metamod-source
+          ref: master
+          path: mmsource-2.0
+          submodules: recursive
+
+      - uses: actions/checkout@v4
+        with:
+          repository: alliedmodders/ambuild
+          path: ambuild
+
+      - name: Install AMBuild
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip setuptools
+          cd ambuild && python -m pip install .
+
+      # Версия у всех трёх целей одна и берётся из тега. В C# её подставляет
+      # MSBuild, здесь — генерируемый заголовок.
+      - name: Stamp version
+        shell: bash
+        working-directory: ConnectHistory/metamod
+        run: |
+          set -euo pipefail
+          cat > src/mm/version.h <<EOF
+          // Сгенерировано CI из тега. Руками не править.
+          #pragma once
+          #define CH_VERSION "$PLUGIN_VERSION"
+          EOF
+          cat src/mm/version.h
+
+      - name: Build mariadb-connector-c
+        shell: bash
+        working-directory: ConnectHistory/metamod
+        run: |
+          set -euo pipefail
+          cmake -S vendor/mariadb-connector-c -B build-deps/mariadb \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DWITH_UNIT_TESTS=OFF \
+                -DWITH_EXTERNAL_ZLIB=OFF \
+                -DCLIENT_PLUGIN_DIALOG=OFF
+          cmake --build build-deps/mariadb --config Release --target mariadbclient
+          mkdir -p build-deps/lib
+          find build-deps/mariadb -name 'libmariadbclient.a' -exec cp {} build-deps/lib/ \; || true
+          find build-deps/mariadb -name 'mariadbclient.lib' -exec cp {} build-deps/lib/ \; || true
+
+      - name: Build plugin
+        shell: bash
+        working-directory: ConnectHistory/metamod
+        run: |
+          set -euo pipefail
+          mkdir -p build && cd build
+          python ../configure.py --enable-optimize --sdks cs2
+          ambuild
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: metamod-tree-${{ matrix.slug }}
+          path: ConnectHistory/metamod/build/package/cs2
+          if-no-files-found: error
+
+  # Обе ОС в ОДНОМ архиве: владелец сервера скачивает один файл и не гадает,
+  # какой из двух ему нужен.
+  metamod-package:
+    needs: [version, metamod-build]
+    runs-on: ubuntu-latest
+    env:
+      PLUGIN_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: trees
+          pattern: metamod-tree-*
+
+      - name: Merge and zip
+        run: |
+          set -euo pipefail
+          mkdir -p merged
+          for tree in trees/metamod-tree-*; do
+            cp -a "$tree"/. merged/
+          done
+
+          find merged -type f | sort
+
+          ZIP="ConnectHistory_metamod_${PLUGIN_VERSION}.zip"
+          (cd merged && zip -rq "../$ZIP" .)
+
+          # Архив с одной ОС выглядит рабочим до первой установки
+          for required in \
+            "addons/ConnectHistory/bin/win64/ConnectHistory.dll" \
+            "addons/ConnectHistory/bin/linuxsteamrt64/ConnectHistory.so" \
+            "addons/metamod/ConnectHistory.vdf" \
+            "addons/ConnectHistory/GeoLite2-Country.mmdb" \
+            "addons/ConnectHistory/GeoLite2-City.mmdb"
+          do
+            unzip -l "$ZIP" | grep -q -F "$required" \
+              || { echo "::error::в архиве нет $required"; exit 1; }
+          done
+
+          # Конфиг содержит пароль от базы и в релиз попадать не должен никогда
+          if unzip -l "$ZIP" | grep -q -F 'Settings.json'; then
+            echo "::error::в архиве оказался Settings.json — он содержит пароль"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-metamod
+          path: ConnectHistory_metamod_${{ needs.version.outputs.version }}.zip
+          if-no-files-found: error
+
   publish:
-    needs: [version, cssharp, swiftly]
+    needs: [version, cssharp, swiftly, metamod-package]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -243,7 +408,7 @@ jobs:
             | Архив | Куда ставить | Требования |
             |---|---|---|
             | `ConnectHistory_cssharp_${{ needs.version.outputs.version }}.zip` | корень игрового сервера | CounterStrikeSharp ≥ 1.0.369 (Metamod:Source) |
-            | `ConnectHistory_swiftly_${{ needs.version.outputs.version }}.zip` | корень игрового сервера | SwiftlyS2 ≥ 1.4.9 (Metamod не нужен) |
+            | `ConnectHistory_swiftly_${{ needs.version.outputs.version }}.zip` | корень игрового сервера | SwiftlyS2 ≥ 1.4.9 (Metamod не нужен) |\n            | `ConnectHistory_metamod_${{ needs.version.outputs.version }}.zip` | корень игрового сервера | Metamod:Source (нативный плагин, Windows + Linux в одном архиве) |
 
             Плагин сам создаст конфиги и таблицы при первом запуске: заполните секцию
             `Database` в `Settings.json` и перезагрузите конфигурацию.
