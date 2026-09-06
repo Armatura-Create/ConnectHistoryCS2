@@ -9,6 +9,8 @@
 [![Downloads](https://img.shields.io/github/downloads/Armatura-Create/ConnectHistoryCS2/total?logo=github&color=success)](https://github.com/Armatura-Create/ConnectHistoryCS2/releases)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![CounterStrikeSharp](https://img.shields.io/badge/CounterStrikeSharp-%E2%89%A5%201.0.369-1f6feb?logo=steam)](https://github.com/roflmuffin/CounterStrikeSharp)
+[![SwiftlyS2](https://img.shields.io/badge/SwiftlyS2-%E2%89%A5%201.4.9-8957e5)](https://github.com/swiftly-solution/swiftlys2)
+[![Metamod:Source](https://img.shields.io/badge/Metamod%3ASource-%E2%89%A5%202.0.0--git1322-f0883e)](https://www.sourcemm.net/downloads.php?branch=master)
 [![MySQL](https://img.shields.io/badge/MySQL-5.7%20%7C%208.0%2B-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Platforms](https://img.shields.io/badge/Platforms-Linux%20%7C%20Windows-2ea44f)](#installation)
 [![GeoLite2](https://img.shields.io/badge/GeoLite2-bundled%20%2F%20auto--download-009688)](#build)
@@ -26,10 +28,11 @@ different plugins on different servers and build a single report.
 |---|---|---|---|
 | **CounterStrikeSharp** | CSSharp ≥ 1.0.369 (hence Metamod:Source) | `ConnectHistory_cssharp_<version>.zip` | `addons/counterstrikesharp/plugins/ConnectHistory/` |
 | **SwiftlyS2** | SwiftlyS2 ≥ 1.4.9, Metamod **not needed** | `ConnectHistory_swiftly_<version>.zip` | `addons/swiftlys2/plugins/ConnectHistory/` |
-| **Metamod:Source** | Metamod:Source only | `ConnectHistory_metamod_<version>.zip` | `addons/ConnectHistory/` |
+| **Metamod:Source** | Metamod:Source ≥ 2.0.0-git1322, nothing else | `ConnectHistory_metamod_<version>.zip` | `addons/ConnectHistory/` |
 
-The native target does not collect `score` or ping — what differs and why is in
-[Differences between targets](docs/DATABASE.md#расхождения-между-целями).
+The native target records the connection history in full but collects no match
+results — what is missing and why is in
+[Differences between targets](docs/DATABASE.md#differences-between-targets).
 
 ## Features
 
