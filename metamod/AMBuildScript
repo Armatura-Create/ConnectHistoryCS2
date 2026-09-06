@@ -29,7 +29,9 @@ def additionalLibs(context, binary, sdk):
       os.path.join(root, 'mariadbclient.lib'),
       os.path.join(sdk['path'], 'lib', 'public', 'win64', '2015', 'libprotobuf.lib'),
       os.path.join(sdk['path'], 'lib', 'public', 'win64', 'steam_api64.lib'),
-      'ws2_32.lib', 'crypt32.lib', 'secur32.lib', 'shlwapi.lib',
+      # bcrypt: mariadb-connector-c hashes through the Windows CNG API
+      # (ma_hash_* in win_crypt.c), which lives in bcrypt.lib alone.
+      'ws2_32.lib', 'crypt32.lib', 'secur32.lib', 'shlwapi.lib', 'bcrypt.lib',
     ]
   return [
     os.path.join(root, 'libmariadbclient.a'),

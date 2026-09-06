@@ -171,14 +171,39 @@ jobs:
 
           ls -la build-deps/lib build-deps/include
 
+      # The compiler output is echoed back as workflow annotations, not just left
+      # in the log: annotations are readable without signing in, and a build that
+      # only fails inside a 4000-line log costs a round trip to every reader.
       - name: Build plugin
         shell: bash
         working-directory: ConnectHistory/metamod
         run: |
-          set -euo pipefail
+          # -e is on by default for shell: bash, and it would abort before the
+          # annotations below ever ran.
+          set +e -u -o pipefail
           mkdir -p build && cd build
-          python ../configure.py --enable-optimize --sdks cs2
-          ambuild
+          python ../configure.py --enable-optimize --sdks cs2 2>&1 | tee configure.out
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -iE "error" configure.out | head -20 | while IFS= read -r line; do
+              echo "::error::configure: ${line}"
+            done
+            exit "$status"
+          fi
+
+          ambuild 2>&1 | tee build.out
+          status=${PIPESTATUS[0]}
+          [ "$status" -eq 0 ] && exit 0
+
+          # MSVC says "error C2065:", clang says "error:". Notes and the SDK's own
+          # warnings are dropped: they bury the one line that matters.
+          grep -E "error[ :C]" build.out \
+            | grep -v "^ " \
+            | head -20 \
+            | while IFS= read -r line; do
+                echo "::error::${line}"
+              done
+          exit "$status"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
