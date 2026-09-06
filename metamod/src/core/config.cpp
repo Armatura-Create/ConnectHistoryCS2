@@ -99,6 +99,31 @@ std::string Join(const std::string& directory, const std::string& name) {
     return directory + "/" + name;
 }
 
+// Чтение БЕЗ исключений.
+//
+// Не стилистика: игровая сборка идёт с -fno-exceptions (так собран весь hl2sdk),
+// и в таком режиме nlohmann/json на ошибке зовёт std::abort(). То есть кривой
+// Settings.json убивал бы сервер вместо отката на значения по умолчанию — ровно
+// наоборот тому, что обещает ConfigResilienceTests. Поэтому тип проверяется
+// заранее, а get<T> вызывается только когда он заведомо подойдёт.
+void ReadValue(const json& value, bool* target) {
+    if (value.is_boolean()) *target = value.get<bool>();
+}
+
+void ReadValue(const json& value, int32_t* target) {
+    if (value.is_number_integer()) *target = static_cast<int32_t>(value.get<int64_t>());
+}
+
+void ReadValue(const json& value, uint32_t* target) {
+    if (!value.is_number_unsigned()) return;
+    const uint64_t raw = value.get<uint64_t>();
+    if (raw <= 0xFFFFFFFFull) *target = static_cast<uint32_t>(raw);
+}
+
+void ReadValue(const json& value, std::string* target) {
+    if (value.is_string()) *target = value.get<std::string>();
+}
+
 // Читает поле, оставляя значение по умолчанию, если его нет или тип не тот.
 // Частичный или битый файл не должен приводить к нулям в базе.
 template <typename T>
@@ -107,11 +132,7 @@ void Read(const json& node, const char* key, T* target) {
     const auto it = node.find(key);
     if (it == node.end() || it->is_null()) return;
 
-    try {
-        *target = it->get<T>();
-    } catch (const json::exception&) {
-        // Тип не подошёл — оставляем значение по умолчанию
-    }
+    ReadValue(*it, target);
 }
 
 const json& Section(const json& root, const char* key, const json& fallback) {

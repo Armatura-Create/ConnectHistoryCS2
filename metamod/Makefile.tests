@@ -42,7 +42,23 @@ $(OUT)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
+# Игровая сборка идёт с -fno-exceptions (так собран весь hl2sdk), и в этом режиме
+# nlohmann/json на ошибке зовёт std::abort() вместо броска. То есть кривой конфиг
+# или битая строка спула убивали бы сервер вместо отката на значения по умолчанию.
+#
+# Тесты собираются С исключениями (их требует doctest), поэтому проверка отдельная.
+#
+# Стандарт здесь c++20, а не c++17: именно так ядро компилирует AMBuild. Проверка
+# закрывает сразу две дыры между локальной сборкой и игровой — исключения и стандарт.
+GAMEFLAGS ?= -std=c++20 -fno-exceptions -fsyntax-only
+
+noexcept-check:
+	@for f in $(CORE_SRC); do \
+		$(CXX) $(GAMEFLAGS) $(INCLUDES) $$f || exit 1; \
+	done
+	@echo "core compiles as the game build does (c++20, -fno-exceptions)"
+
 clean:
 	rm -rf $(OUT)
 
-.PHONY: all clean
+.PHONY: all clean noexcept-check

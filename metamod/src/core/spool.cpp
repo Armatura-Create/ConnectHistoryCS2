@@ -32,15 +32,54 @@ void ReadOptional(const json& node, const char* key, bool* present, std::string*
     *value = it->get<std::string>();
 }
 
+// Чтение БЕЗ исключений — см. пояснение в config.cpp: игровая сборка идёт
+// с -fno-exceptions, и там nlohmann/json на ошибке зовёт std::abort().
+// Битая строка спула обязана быть пропущена, а не убить сервер.
+bool TryGet(const json& value, bool* out) {
+    if (!value.is_boolean()) return false;
+    *out = value.get<bool>();
+    return true;
+}
+
+bool TryGet(const json& value, int* out) {
+    if (!value.is_number_integer()) return false;
+    *out = static_cast<int>(value.get<int64_t>());
+    return true;
+}
+
+bool TryGet(const json& value, int64_t* out) {
+    if (!value.is_number_integer()) return false;
+    *out = value.get<int64_t>();
+    return true;
+}
+
+bool TryGet(const json& value, uint32_t* out) {
+    if (!value.is_number_unsigned()) return false;
+    const uint64_t raw = value.get<uint64_t>();
+    if (raw > 0xFFFFFFFFull) return false;
+    *out = static_cast<uint32_t>(raw);
+    return true;
+}
+
+bool TryGet(const json& value, uint64_t* out) {
+    if (!value.is_number_unsigned()) return false;
+    *out = value.get<uint64_t>();
+    return true;
+}
+
+bool TryGet(const json& value, std::string* out) {
+    if (!value.is_string()) return false;
+    *out = value.get<std::string>();
+    return true;
+}
+
 template <typename T>
 T ReadOr(const json& node, const char* key, T fallback) {
     const auto it = node.find(key);
     if (it == node.end() || it->is_null()) return fallback;
-    try {
-        return it->get<T>();
-    } catch (const json::exception&) {
-        return fallback;
-    }
+
+    T value{};
+    return TryGet(*it, &value) ? value : fallback;
 }
 
 // Спул содержит ники и IP игроков — файл не должен читаться кем попало
@@ -128,7 +167,11 @@ std::string SerializeJob(const WriteJob& job) {
             break;
     }
 
-    return node.dump();
+    // error_handler_t::replace, а не бросок на невалидном UTF-8: ник приходит
+    // от игрока, и он вполне может прислать битую последовательность. Под
+    // -fno-exceptions бросок превращается в std::abort() — то есть один игрок
+    // с кривым ником уронил бы сервер.
+    return node.dump(-1, ' ', false, json::error_handler_t::replace);
 }
 
 bool DeserializeJob(const std::string& line, WriteJob* job) {

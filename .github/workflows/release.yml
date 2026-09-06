@@ -316,9 +316,30 @@ jobs:
                 -DWITH_EXTERNAL_ZLIB=OFF \
                 -DCLIENT_PLUGIN_DIALOG=OFF
           cmake --build build-deps/mariadb --config Release --target mariadbclient
-          mkdir -p build-deps/lib
-          find build-deps/mariadb -name 'libmariadbclient.a' -exec cp {} build-deps/lib/ \; || true
-          find build-deps/mariadb -name 'mariadbclient.lib' -exec cp {} build-deps/lib/ \; || true
+
+          # mysql.h includes mariadb_version.h and ma_config.h, which CMake generates
+          # into its binary directory - the shipped include/ alone is not enough.
+          mkdir -p build-deps/include build-deps/lib
+          for header in mariadb_version.h ma_config.h; do
+            found=$(find build-deps/mariadb -name "$header" -print -quit)
+            if [ -z "$found" ]; then
+              echo "::error::CMake did not generate $header"
+              exit 1
+            fi
+            cp "$found" build-deps/include/
+          done
+
+          # Without the static library the link fails much later with a far less
+          # obvious message, so check it here.
+          lib=$(find build-deps/mariadb \( -name 'libmariadbclient.a' -o -name 'mariadbclient.lib' \) -print -quit)
+          if [ -z "$lib" ]; then
+            echo "::error::static MariaDB client was not built"
+            find build-deps/mariadb -name '*.a' -o -name '*.lib' | head -20
+            exit 1
+          fi
+          cp "$lib" build-deps/lib/
+
+          ls -la build-deps/lib build-deps/include
 
       - name: Build plugin
         shell: bash

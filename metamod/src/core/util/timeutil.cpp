@@ -55,14 +55,25 @@ bool EqualsIgnoreCase(const std::string& a, const char* b) {
     return b[i] == '\0';
 }
 
+// Разбор в UTC. Возвращаемое значение проверяется: gmtime может отказать
+// на абсурдном time_t, и тогда чтение неинициализированной tm — это мусор
+// в колонке DATETIME, который потом никто не объяснит.
 std::tm BreakDownUtc(int64_t epochSeconds) {
     const std::time_t raw = static_cast<std::time_t>(epochSeconds);
     std::tm parts{};
+
 #ifdef _WIN32
-    gmtime_s(&parts, &raw);
+    const bool ok = gmtime_s(&parts, &raw) == 0;
 #else
-    gmtime_r(&raw, &parts);
+    const bool ok = gmtime_r(&raw, &parts) != nullptr;
 #endif
+
+    if (!ok) {
+        // 1970-01-01 00:00:00 — заведомо валидная метка вместо мусора
+        parts = std::tm{};
+        parts.tm_year = 70;
+        parts.tm_mday = 1;
+    }
     return parts;
 }
 
@@ -103,7 +114,10 @@ int64_t UtcNowSeconds() {
 std::string FormatSqlDateTime(int64_t epochSeconds) {
     const std::tm parts = BreakDownUtc(epochSeconds);
 
-    char buffer[32];
+    // Поля tm — обычные int, и компилятор обязан считаться с INT_MIN
+    // ("-2147483648", 11 символов). Шесть полей, пять разделителей и NUL — 72 байта.
+    // Буфер с запасом: усечённая дата уехала бы в базу молча.
+    char buffer[96];
     std::snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d",
                   parts.tm_year + 1900, parts.tm_mon + 1, parts.tm_mday,
                   parts.tm_hour, parts.tm_min, parts.tm_sec);
@@ -131,7 +145,7 @@ int32_t ResolveDisplayOffsetSeconds(const std::string& zone, ILogger* logger) {
 std::string FormatDisplayDateTime(int64_t epochSeconds, int32_t offsetSeconds) {
     const std::tm parts = BreakDownUtc(epochSeconds + offsetSeconds);
 
-    char buffer[32];
+    char buffer[96];  // см. комментарий в FormatSqlDateTime
     std::snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d",
                   parts.tm_year + 1900, parts.tm_mon + 1, parts.tm_mday,
                   parts.tm_hour, parts.tm_min);

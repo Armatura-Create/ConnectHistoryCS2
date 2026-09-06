@@ -483,7 +483,9 @@ const char *PLUGIN_FULL_VERSION   = \"{version}\";
 
     cxx.linkflags += additionalLibs(context, binary, sdk)
     cxx.defines += additionalDefines(context, binary, sdk)
-    cxx.cxxincludes += additionalIncludes(context, binary, sdk)
+    # cxxincludes reaches C++ only, and libmaxminddb is compiled as C - its headers
+    # would not be found. Our vendored include paths go to `includes`, which covers both.
+    cxx.includes += additionalIncludes(context, binary, sdk)
     context.AddConfigureFile(os.path.join(context.currentSourcePath, 'plugin-metadata.json'))
 
     return binary

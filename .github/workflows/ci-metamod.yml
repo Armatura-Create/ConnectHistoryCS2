@@ -56,6 +56,15 @@ jobs:
           make -f Makefile.tests -j"$(nproc)"
           ./build-tests/ch_tests
 
+      # The game build uses -fno-exceptions (all of hl2sdk does) and -std=c++20,
+      # while the tests need exceptions (doctest does) and build as c++17. In the
+      # -fno-exceptions mode nlohmann/json calls std::abort() instead of throwing,
+      # so a broken config would kill the server instead of falling back to defaults.
+      # This compile-only pass closes both gaps at once.
+      - name: Core compiles as the game build does
+        working-directory: metamod
+        run: make -f Makefile.tests noexcept-check
+
   # Building the plugin itself. Linux builds inside the Steam Runtime 3 container:
   # that is the ABI a CS2 dedicated server uses, and a binary from a plain ubuntu
   # runner will not load.
@@ -138,10 +147,29 @@ jobs:
                 -DCLIENT_PLUGIN_DIALOG=OFF
           cmake --build build-deps/mariadb --config Release --target mariadbclient
 
-          mkdir -p build-deps/lib
-          find build-deps/mariadb -name 'libmariadbclient.a' -exec cp {} build-deps/lib/ \; || true
-          find build-deps/mariadb -name 'mariadbclient.lib' -exec cp {} build-deps/lib/ \; || true
-          ls -la build-deps/lib
+          # mysql.h includes mariadb_version.h and ma_config.h, which CMake generates
+          # into its binary directory - the shipped include/ alone is not enough.
+          mkdir -p build-deps/include build-deps/lib
+          for header in mariadb_version.h ma_config.h; do
+            found=$(find build-deps/mariadb -name "$header" -print -quit)
+            if [ -z "$found" ]; then
+              echo "::error::CMake did not generate $header"
+              exit 1
+            fi
+            cp "$found" build-deps/include/
+          done
+
+          # Without the static library the link fails much later with a far less
+          # obvious message, so check it here.
+          lib=$(find build-deps/mariadb \( -name 'libmariadbclient.a' -o -name 'mariadbclient.lib' \) -print -quit)
+          if [ -z "$lib" ]; then
+            echo "::error::static MariaDB client was not built"
+            find build-deps/mariadb -name '*.a' -o -name '*.lib' | head -20
+            exit 1
+          fi
+          cp "$lib" build-deps/lib/
+
+          ls -la build-deps/lib build-deps/include
 
       - name: Build plugin
         shell: bash

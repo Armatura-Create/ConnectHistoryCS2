@@ -27,7 +27,21 @@ make -f Makefile.tests -j8 && ./build-tests/ch_tests
   Вендорный `maxminddb.h` объявляет его, поэтому включение обёрнуто в
   `#pragma GCC diagnostic` — точечно, не на весь проект.
 
-Если правите заголовки, самая дешёвая проверка — прогнать сборку в контейнере:
+* Игровая сборка идёт с `-fno-exceptions` (так собран весь hl2sdk) и `-std=c++20`,
+  а тесты — с исключениями и `c++17`. В режиме без исключений nlohmann/json на
+  ошибке зовёт `std::abort()`, то есть кривой `Settings.json` убивал бы сервер
+  вместо отката на значения по умолчанию. Обе дыры закрывает
+  `make -f Makefile.tests noexcept-check` — он компилирует ядро ровно так, как это
+  делает AMBuild.
+
+Перед пушем стоит прогнать обе цели:
+
+```bash
+make -f Makefile.tests -j8 && ./build-tests/ch_tests   # поведение
+make -f Makefile.tests noexcept-check                  # совместимость с игровой сборкой
+```
+
+Различия компиляторов этим не покрываются — для них самое дешёвое:
 `docker run --rm -v "$PWD":/w -w /w gcc:13 make -f Makefile.tests`.
 
 ## Что собирается только в CI
