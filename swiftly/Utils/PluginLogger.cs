@@ -33,6 +33,9 @@ public sealed partial class PluginLogger : ILogger
     [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "[ConnectHistory] [DEBUG] {Message}")]
     private static partial void WriteDebug(Microsoft.Extensions.Logging.ILogger logger, string message);
 
+    [LoggerMessage(EventId = 6, Level = LogLevel.Information, Message = "{Message}")]
+    private static partial void WriteRaw(Microsoft.Extensions.Logging.ILogger logger, string message);
+
     [LoggerMessage(EventId = 4, Level = LogLevel.Error, Message = "[ConnectHistory] {Message} => {Error}")]
     private static partial void WriteFailure(Microsoft.Extensions.Logging.ILogger logger, string message, string error);
 
@@ -42,6 +45,9 @@ public sealed partial class PluginLogger : ILogger
     public void Info(string message) => WriteInfo(_sink, message);
 
     public void Warn(string message) => WriteWarn(_sink, message);
+
+    // Без метки плагина: префикс на каждой строке разорвал бы рамку заставки
+    public void Raw(string message) => WriteRaw(_sink, message);
 
     public void Debug(string message)
     {

@@ -172,10 +172,10 @@ addons/ConnectHistory/
 
 Полная схема и готовые запросы: [docs/DATABASE.md](docs/DATABASE.md).
 
-Готовый раздел для панели Flute CMS —
-[ConnectHistory-Flute](https://github.com/Armatura-Create/ConnectHistory-Flute):
-онлайн, статистика, фильтры и графики поверх этих таблиц.
-Как связать — [docs/FLUTE_MODULE.md](docs/FLUTE_MODULE.md).
+Готовый раздел для панели Flute CMS:
+**[ConnectHistory-Flute](https://github.com/Armatura-Create/ConnectHistory-Flute)** —
+онлайн, статистика, фильтры и графики поверх этих таблиц. Установка и настройка
+описаны в том репозитории.
 
 Заведите плагину отдельного пользователя MySQL — `DROP` и `DELETE` ему не нужны никогда:
 

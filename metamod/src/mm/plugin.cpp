@@ -1,5 +1,6 @@
 #include "mm/plugin.h"
 
+#include "core/banner.h"
 #include "core/logger.h"
 #include "core/schema_service.h"
 #include "core/util/chat_format.h"
@@ -54,6 +55,10 @@ public:
 
     void Debug(const std::string& message) override {
         if (_config != nullptr && _config->debug) Write("DEBUG", message);
+    }
+
+    void Raw(const std::string& message) override {
+        META_CONPRINTF("%s\n", message.c_str());
     }
 
 private:
@@ -134,6 +139,13 @@ bool ConnectHistoryPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t 
     _version = CH_VERSION;
 
     ReloadConfig();
+
+    // Заставка печатается ПОСЛЕ загрузки конфига: в ней номер сервера,
+    // а он приходит оттуда.
+    for (const std::string& line : BuildBanner(_version, "Metamod:Source", _config.serverId)) {
+        _logger->Raw(line);
+    }
+
     _geoIp.reset(new GeoIpService(_pluginDirectory, _logger.get()));
 
     BuildDatabaseStack();

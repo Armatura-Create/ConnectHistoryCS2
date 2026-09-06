@@ -19,7 +19,7 @@
     <AssemblyName>ConnectHistory</AssemblyName>
     <!-- База для локальных сборок: dotnet build -p:Version=X.Y.Z перекрывает её.
          ModuleVersion читается из метаданных сборки, руками нигде не дублируется. -->
-    <Version>2.2.0</Version>
+    <Version>3.0.0</Version>
     <Authors>Armatura</Authors>
     <Copyright>Copyright (C) 2026 Armatura</Copyright>
     <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>

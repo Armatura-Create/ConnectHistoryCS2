@@ -15,6 +15,7 @@ for sdk_target in MMSPlugin.sdk_targets:
 
   binary.sources += [
     # Ядро: движка не знает, проверяется тестами на любой машине
+    'src/core/banner.cpp',
     'src/core/config.cpp',
     'src/core/config_defaults.cpp',
     'src/core/geoip.cpp',

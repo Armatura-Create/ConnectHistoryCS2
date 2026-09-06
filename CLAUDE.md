@@ -1,428 +1,434 @@
 # CLAUDE.md
 
-**ConnectHistory** — история подключений и статистика игроков CS2 в MySQL,
-в **трёх независимых реализациях**:
+**ConnectHistory** — connection history and player analytics for CS2, stored in MySQL,
+implemented **three independent times**:
 
-| Каталог | Платформа | Язык | Metamod нужен? |
+| Directory | Platform | Language | Needs Metamod? |
 |---|---|---|---|
-| `cssharp/` | CounterStrikeSharp ≥ 1.0.369 | C# / net10.0 | да (CSSharp сам его плагин) |
-| `swiftly/` | SwiftlyS2 ≥ 1.4.9 | C# / net10.0 | **нет**, свой лоадер через `gameinfo.gi` |
-| `metamod/` | Metamod:Source | C++17 | да, это и есть нативный MM:S-плагин |
+| `cssharp/` | CounterStrikeSharp ≥ 1.0.369 | C# / net10.0 | yes (CSSharp is itself an MM:S plugin) |
+| `swiftly/` | SwiftlyS2 ≥ 1.4.9 | C# / net10.0 | **no**, own loader via `gameinfo.gi` |
+| `metamod/` | Metamod:Source | C++17 | yes — this *is* the native MM:S plugin |
 
-**Код по целям не переиспользуется — он продублирован сознательно** (решение владельца:
-цели должны развиваться независимо). Общее у них ровно одно:
+**Code is duplicated across targets on purpose** (owner's decision: the targets must
+evolve independently). Exactly one thing is shared:
 
-> **`docs/DATABASE.md` — контракт.** Три реализации обязаны писать одну и ту же схему,
-> и запросы из этого документа работают одинаково независимо от того, каким плагином
-> записана строка. Любое расхождение фиксируется в разделе
-> «Расхождения между целями» — молчаливое расхождение хуже отсутствия фичи.
+> **`docs/DATABASE.md` is a contract.** All three implementations must write the same
+> schema, and the queries in that document must behave identically no matter which
+> plugin wrote the row. Any divergence goes into its "Differences between targets"
+> section — a silent divergence is worse than a missing feature, because a report
+> spanning several servers will quietly come out wrong.
 
-Общие на репозиторий также: `GeoIP/` (одна копия баз GeoLite2 на всех),
+Also shared across the repository: `GeoIP/` (one copy of the GeoLite2 databases),
 `docs/`, `LICENSE`, `README*.md`.
 
-**Правило правки инварианта: он правится во всех трёх целях или ни в одной.**
-Компилятор об этом не напомнит — напомнит только этот файл.
+**Rule for changing an invariant: change it in all three targets or in none.**
+No compiler will remind you — only this file will.
 
-Репозиторий: <https://github.com/Armatura-Create/ConnectHistoryCS2>, лицензия GPL-3.0-or-later.
+Repository: <https://github.com/Armatura-Create/ConnectHistoryCS2>, licence GPL-3.0-or-later.
 
-## Цель `cssharp/` — CounterStrikeSharp
+Documentation and commit messages are written in **English**. `README.ru.md` is the one
+deliberate exception — it is the Russian translation of the user-facing README.
+
+## Target `cssharp/` — CounterStrikeSharp
 
 - `net10.0`, namespace `ConnectHistory`, `[MinimumApiVersion(369)]`
-- Зависимости: `CounterStrikeSharp.API` `1.0.369` (пин, не `*`), `MySqlConnector` `2.6.2`, `MaxMind.GeoIP2` `5.3.0`
-- **Собираемся против МИНИМАЛЬНОЙ поддерживаемой версии CSSharp, а не самой свежей.** Тогда
-  компиляция сама доказывает, что API из более новых сборок не используется, и плагин грузится
-  на любом сервере с 1.0.369+. Версия пакета в `.csproj` и `[MinimumApiVersion]` обязаны
-  совпадать — это проверяет `ApiVersionTests`. Инцидент в соседнем плагине: с
-  `MinimumApiVersion(373)` сервер на 1.0.371 отказался грузить плагин, хотя ничего
-  из 372–373 в коде не было.
-- `net10.0` — не выбор, а требование: CSSharp с v1.0.369 работает на .NET 10.
-- SDK стоит в `~/.dotnet` (не в PATH по умолчанию): `export PATH="$HOME/.dotnet:$PATH"`
+- Dependencies: `CounterStrikeSharp.API` `1.0.369` (pinned, not `*`), `MySqlConnector`
+  `2.6.2`, `MaxMind.GeoIP2` `5.3.0`
+- **Build against the MINIMUM supported CSSharp version, not the newest.** Then the
+  compiler itself proves that no API from a newer build is used, and the plugin loads on
+  any server running 1.0.369+. The package version in `.csproj` and `[MinimumApiVersion]`
+  must match — `ApiVersionTests` enforces it. Real incident in a sibling plugin: with
+  `MinimumApiVersion(373)`, a server on 1.0.371 refused to load the plugin even though
+  nothing from 372–373 was used.
+- `net10.0` is a requirement, not a preference: CSSharp runs on .NET 10 from v1.0.369.
+- The SDK lives in `~/.dotnet` and is not on `PATH` by default:
+  `export PATH="$HOME/.dotnet:$PATH"`
 
-## Цель `swiftly/` — SwiftlyS2
+## Target `swiftly/` — SwiftlyS2
 
-- `net10.0`, тот же namespace, пакет `SwiftlyS2.CS2` версии из `swiftly/Swiftly.props`
-- SwiftlyS2 **не надстройка над Metamod**: подключается строкой
-  `Game csgo/addons/swiftlys2` в `gameinfo.gi`. Это альтернативный лоадер, а не слой.
-- То же правило минимальной версии: `MinimumAPIVersion` в `PluginMetadata` обязан
-  совпадать с версией пакета (`ApiVersionTests`). Версия вынесена в `Swiftly.props`,
-  потому что нужна и плагину, и тестовому проекту.
-- **`PluginMetadata` — атрибут**, а значения атрибутов обязаны быть константами
-  компиляции. Версию туда подставляет сгенерированный MSBuild `PluginVersion.g.cs`
-  (цель `GeneratePluginVersion`) — правило «версию руками нигде не поднимаем» в силе.
-- **`SwiftlyS2.CS2.dll` собрана только под x64** (выделенный сервер CS2 другой не бывает).
-  На arm64-машине она не грузится, поэтому тесты, упоминающие её типы, пропускаются
-  по `SwiftlyRuntime.Available`. `Skip.IfNot` в начале тела НЕ спасает: JIT разрешает
-  типы метода до выполнения первой строки — обращения вынесены во вложенные классы
-  `Bound`, а чистые помощники в `PluginText`. В CI (x64) пропусков нет.
-- Каталог конфигов приходит целиком из `Core.Configuration.BasePath`, спул — в
-  `Core.PluginDataDirectory` (каталог плагина перезаписывается при обновлении).
+- `net10.0`, same namespace, `SwiftlyS2.CS2` pinned in `swiftly/Swiftly.props`
+- SwiftlyS2 is **not a layer on top of Metamod**: it is wired in with
+  `Game csgo/addons/swiftlys2` in `gameinfo.gi`. It is an alternative loader, not an addon.
+- Same minimum-version rule: `MinimumAPIVersion` in `PluginMetadata` must equal the package
+  version (`ApiVersionTests`). The version lives in `Swiftly.props` because both the plugin
+  and the test project need it, and two drifting literals would turn that test from an
+  invariant check into an attentiveness check.
+- **`PluginMetadata` is an attribute**, and attribute arguments must be compile-time
+  constants. MSBuild generates `PluginVersion.g.cs` (target `GeneratePluginVersion`) from
+  `<Version>`, so the "never bump a version by hand" rule survives.
+- **`SwiftlyS2.CS2.dll` is x64-only** (a CS2 dedicated server is never anything else). It
+  will not load on an arm64 machine, so tests that mention its types are skipped via
+  `SwiftlyRuntime.Available`. `Skip.IfNot` at the top of the test body does **not** help:
+  the JIT resolves every type a method mentions before the first line runs. Such calls live
+  in nested `Bound` classes, and pure helpers live in `PluginText`. CI (x64) skips nothing.
+- The config directory arrives whole from `Core.Configuration.BasePath`; the spool lives in
+  `Core.PluginDataDirectory` (the plugin directory is overwritten on update).
 
-## Цель `metamod/` — нативный C++
+## Target `metamod/` — native C++
 
-- C++17, ядро в `src/core` **не знает ни про hl2sdk, ни про MySQL**
-- **Никаких сигнатур, смещений и детуров.** Всё берётся хуками Metamod, игровыми
-  событиями и интерфейсами движка. Цена — `score` и `ping_*` остаются `NULL`
-  (см. `docs/DATABASE.md`), выгода — плагин не ломается на обновлении игры.
-- Итоги матча копятся из игровых событий (`player_death`, `player_hurt`, `round_mvp`,
-  `round_end`), а не читаются из полей контроллера: для контроллера нужен указатель
-  на `CGameEntitySystem` по захардкоженному смещению.
-- **`.mmdb` открывается только из памяти** (`ch_mmdb_open_memory`): у `libmaxminddb`
-  есть исключительно `mmap`, а страничный отказ в игровом процессе — это SIGBUS
-  и смерть сервера без стека. Обёртка включает `maxminddb.c` целиком, чтобы
-  не трогать сабмодуль; при обновлении вендора сверять последовательность
-  инициализации — компилятор о её изменении промолчит.
-- `DisplayTimeZone` понимает `UTC`, `Local` и смещение `+03:00`; имён IANA нет
-  (нужна tzdata или правка глобальной `TZ` процесса).
-- Вендоры сабмодулями: `nlohmann/json`, `doctest`, `libmaxminddb`,
-  `mariadb-connector-c` (LGPL-2.1; `libmysqlclient` не берём — его
-  GPL-2.0-with-FOSS-exception конфликтует с GPL-3).
-- `AMBuildScript` и `configure.py` взяты из CS2Fixes (GPL-3.0) и адаптированы.
+- C++17. The core in `src/core` **knows nothing about hl2sdk or MySQL**.
+- **No signatures, no offsets, no detours.** Everything needed comes from Metamod hooks,
+  game events and engine interfaces. The price is that `score` and `ping_*` stay `NULL`
+  (see `docs/DATABASE.md`); the payoff is a plugin that does not break on a game update.
+- Match results accumulate from game events (`player_death`, `player_hurt`, `round_mvp`,
+  `round_end`) instead of being read off the controller: reaching the controller needs a
+  `CGameEntitySystem` pointer obtained by a hardcoded offset.
+- **`.mmdb` is opened from memory only** (`ch_mmdb_open_memory`): `libmaxminddb` offers
+  nothing but `mmap`, and a page fault inside a game process is a SIGBUS that kills the
+  server with no stack. The wrapper `#include`s `maxminddb.c` whole so the submodule stays
+  untouched; when bumping the vendor, re-check the initialisation sequence — the compiler
+  will not warn if upstream changes it.
+- `DisplayTimeZone` understands `UTC`, `Local` and an offset like `+03:00`; IANA names are
+  not supported (they need tzdata, or mutating the process-wide `TZ`).
+- Vendored as submodules: `nlohmann/json`, `doctest`, `libmaxminddb`, `mariadb-connector-c`
+  (LGPL-2.1 — `libmysqlclient` is deliberately avoided, its
+  GPL-2.0-with-FOSS-exception conflicts with GPL-3).
+- `AMBuildScript` and `configure.py` come from CS2Fixes (GPL-3.0) and are adapted.
 
-## Команды
+## Commands
 
 ```bash
 export PATH="$HOME/.dotnet:$PATH"
 
-cd cssharp && ./build.sh          # restore -> тесты -> Release -> ConnectHistory_cssharp_<version>.zip
-cd swiftly && ./build.sh 2.3.0    # то же с явной версией
+cd cssharp && ./build.sh          # restore -> tests -> Release -> ConnectHistory_cssharp_<version>.zip
+cd swiftly && ./build.sh 3.0.0    # same, with an explicit version
 
 dotnet test cssharp/ConnectHistory.sln
 dotnet test swiftly/ConnectHistory.sln
 
-# Ядро C++-цели: без hl2sdk, без MySQL, секунда на любой машине
+# Native core: no hl2sdk, no MySQL, one second on any machine
 cd metamod && make -f Makefile.tests -j8 && ./build-tests/ch_tests
 ```
 
-Сборка самого MM:S-плагина требует hl2sdk, Metamod:Source и статического клиента
-MariaDB — она живёт в CI (`metamod/README.md` описывает и локальный путь под Linux).
-
-Живая проверка схемы и пути записи (реально проверяет DDL, идемпотентность закрытия
-сессии и пометку оборванных сессий):
+MySQL integration tests are skipped until `CH_TEST_MYSQL` is set — without it they
+silently prove nothing:
 
 ```bash
 docker run --rm -d -p 3399:3306 -e MYSQL_ROOT_PASSWORD=test -e MYSQL_DATABASE=ch mysql:8
 export CH_TEST_MYSQL="server=127.0.0.1;port=3399;user=root;password=test;database=ch"
-dotnet test
 ```
+
+Building the MM:S plugin itself needs hl2sdk, Metamod:Source and a static MariaDB client —
+that lives in CI (`metamod/README.md` also documents the local Linux path).
 
 ## CI/CD
 
-По воркфлоу на цель, каждый с фильтром по путям (сборка C++ занимает минуты,
-и гонять её на правку в `swiftly/` незачем):
+One workflow per target, each filtered by path (a C++ build takes minutes, and running it
+for a change in `swiftly/` is pointless):
 
-- `ci-cssharp.yml`, `ci-swiftly.yml` — restore, сборка, тесты на MySQL 8
-- `ci-metamod.yml` — две работы: `core` (тесты ядра обычным компилятором, секунды)
-  и `build` (hl2sdk + Metamod + статический MariaDB в контейнере SteamRT3
-  и на windows-latest)
+- `ci-cssharp.yml`, `ci-swiftly.yml` — restore, build, test against MySQL 8
+- `ci-metamod.yml` — two jobs: `core` (core tests with a plain compiler, seconds) and
+  `build` (hl2sdk + Metamod + static MariaDB in a SteamRT3 container and on windows-latest)
 
-`release.yml` — тег `v*` (или ручной запуск). Версия вычисляется ОДИН раз
-в job `version` и раздаётся всем целям: три плагина под одним тегом обязаны
-представляться сервером одним номером. В C# её подставляет MSBuild,
-в C++ — генерируемый `src/mm/version.h`.
+`release.yml` fires on tag `v*` (or manual dispatch). The version is computed **once** in
+the `version` job and handed to every target: three plugins built from one tag must report
+one number. MSBuild stamps it into the C# targets; a generated `src/mm/version.h` stamps
+the native one.
 
-Обратная сторона фильтров по путям: PR, не трогающий цель, не даёт по ней ни одного
-статуса — такой чек нельзя делать обязательным в branch protection.
+The release body is taken from `CHANGELOG.md` — see [Releases](#releases).
 
-Linux-бинарь MM:S собирается ТОЛЬКО в контейнере Steam Runtime 3: ABI выделенного
-сервера CS2 именно оттуда, и сборка обычным ubuntu-раннером на сервере не загрузится.
+Downside of path filters: a PR that does not touch a target produces no status for it, so
+such a check must never be made required in branch protection.
 
-C#-цели поднимают сервис-контейнер MySQL 8 и передают `CH_TEST_MYSQL`: интеграционные тесты
-проверяют DDL, идемпотентность закрытия сессии и хранение времени в UTC — на моках
-это не проверяется, а без переменной они просто пропускаются и молча ничего не доказывают.
+The Linux MM:S binary is built **only** in the Steam Runtime 3 container: that is the ABI a
+CS2 dedicated server uses, and a binary from a plain ubuntu runner will not load.
 
-Релиз:
-- версия берётся ИЗ ТЕГА (`VERSION=${TAG#v}`) и передаётся как `-p:Version=`; после сборки
-  workflow проверяет, что она реально зашита в DLL, иначе плагин представится серверу
-  чужим номером;
-- в релиз уходит **только полный архив** — с базами GeoLite2 внутри. Шаг `Verify artifact`
-  проваливает сборку, если в zip нет `.mmdb`, `MySqlConnector.dll` или самого плагина:
-  архив без баз выглядит рабочим до первого игрока, у которого не определилась страна;
-- он же проваливает релиз, если в архив каким-то образом попал `Settings.json` — там пароль;
-- свежие базы MaxMind качаются, если в репозитории задан секрет `MAXMIND_LICENSE_KEY`;
-  без него берутся закоммиченные копии из `GeoIP/`.
+Analyzers (`EnableNETAnalyzers` + `AnalysisMode=Recommended`) are always on and the build
+holds at zero warnings; `CA1716` and `CA1859` are silenced deliberately in `.csproj`. The
+C++ core builds with `-Wall -Wextra -Wpedantic -Werror`.
 
-Тесты красные — релиз не публикуется.
+Red tests mean no release.
 
-Локально ту же цепочку прогоняет `cssharp/build.sh` (и `swiftly/build.sh`).
+## The one architectural decision
 
-Анализаторы (`EnableNETAnalyzers` + `AnalysisMode=Recommended`) включены постоянно, сборка
-держится на нуле предупреждений. `CA1716` и `CA1859` заглушены осознанно в `.csproj`.
-Каталог `tests/**` исключён из компиляции плагина в `.csproj` — он лежит внутри дерева
-проекта, и без `<Compile Remove>` SDK-глоб затянул бы его в саму сборку.
+**The session row is created when the player JOINS (`INSERT`), not when they leave.**
 
-## Главное архитектурное решение
+The obvious design is to write the row in the disconnect handler, where the outcome is
+already known. But a game server process dies without warning, and everything that lived
+only in memory dies with it: a crash would mean the session never happened.
 
-**Строка сессии создаётся на ВХОДЕ игрока (`INSERT`), а не на выходе.**
+What the swap buys:
 
-Очевидный вариант — писать строку в `EventPlayerDisconnect`, где уже известен итог.
-Но процесс игрового сервера умирает без предупреждения, и всё, что жило до этого момента
-только в памяти, исчезает вместе с ним: краш = сессии не было вовсе.
+- `ended_at IS NULL AND end_kind = 0` — **who is on the server right now**, a plain
+  `SELECT`, no RCON and no A2S.
+- `end_kind = 5` (stale) — **a map of server crashes**: marked at plugin start for sessions
+  left open by the previous run. No separate monitoring needed.
+- Timeouts, engine kicks and process death now lose the outcome, not the fact of the visit.
 
-Что даёт перестановка:
+The row key is `session_key` (a GUID generated by the plugin), **not** the auto-increment
+`id`: writes are asynchronous, and the database id may not be known yet when the player
+leaves.
 
-- `ended_at IS NULL AND end_kind = 0` — **кто сейчас на сервере**, обычным `SELECT`, без RCON и A2S.
-- `end_kind = 5` (stale) — **карта падений сервера**: помечается при старте плагина для сессий, оставшихся открытыми от прошлого запуска. Отдельный мониторинг для этого не нужен.
-- Timeout, kick движком и падение процесса теряют теперь только итоги, а не факт захода.
+## Architecture
 
-Ключ строки — `session_key` (GUID, генерируется плагином), **не** автоинкрементный `id`:
-запись идёт асинхронно, и на момент выхода игрока id из базы может быть ещё не известен.
+### C# targets (`cssharp/`, `swiftly/`)
 
-## Архитектура
+Both use the same file layout so they can be compared by eye. `ConnectHistory` is a
+`sealed partial class` spread across files:
 
-### C#-цели (`cssharp/`, `swiftly/`)
-
-Раскладка файлов у обеих одинаковая — так их проще сверять глазами.
-`ConnectHistory` — `sealed partial class`, разнесённый по файлам:
-
-| Файл | Что в нём |
+| File | Contents |
 |---|---|
-| `ConnectHistory.cs` / `ConnectHistoryPlugin.cs` | `Load`/`Unload`, сборка сервисов, таймеры, резолв версии |
-| `Events/ConnectHistory.Events.cs` | единственная точка регистрации хендлеров + `SafeEvent` |
-| `Events/ConnectHistory.PlayerEvents.cs` | открытие/закрытие сессии, раунды, смена команды |
+| `ConnectHistory.cs` / `ConnectHistoryPlugin.cs` | `Load`/`Unload`, service wiring, timers, version resolution |
+| `Events/ConnectHistory.Events.cs` | the single handler registration point + `SafeEvent` |
+| `Events/ConnectHistory.PlayerEvents.cs` | opening/closing sessions, rounds, team changes |
 | `Commands/ConnectHistory.Commands.cs` | `*_ch_status`, `*_ch_reload`, `*_playtime`, `*_lastseen` |
-| `Services/ConfigService*.cs` | загрузка JSON, дефолты, JSON Schema |
-| `Services/DatabaseService.cs` | строка подключения, пул, `PingAsync` |
-| `Services/SchemaService.cs` | DDL, миграции, пометка оборванных сессий |
-| `Services/SessionWriter.cs` | очередь, ретраи, спул на диск — **единственное место записи в БД** |
-| `Services/SessionService.cs` | реестр открытых сессий (`OpenSession`) |
-| `Services/StatsCollector.cs` | снятие метрик с контроллера (только главный поток) |
-| `Services/QueryService.cs` | чтение для игроцких команд |
+| `Services/ConfigService*.cs` | JSON loading, defaults, JSON Schema |
+| `Services/DatabaseService.cs` | connection string, pool, `PingAsync` |
+| `Services/SchemaService.cs` | DDL, migrations, marking stale sessions |
+| `Services/SessionWriter.cs` | queue, retries, disk spool — **the only place that writes to the database** |
+| `Services/SessionService.cs` | registry of open sessions (`OpenSession`) |
+| `Services/StatsCollector.cs` | reading metrics off the controller (main thread only) |
+| `Services/QueryService.cs` | reads for the player commands |
 | `Services/GeoIpService.cs` | MaxMind, `FileAccessMode.Memory` |
-| `Utils/` | логгер, `IpUtil`, `SteamIdUtil`, `SqlSanitizer`, `ChatFormat`, `TimeZoneResolver` |
+| `Utils/` | logger, `IpUtil`, `SteamIdUtil`, `SqlSanitizer`, `ChatFormat`, `TimeZoneResolver`, `Banner` |
 
-В `swiftly/` дополнительно `Utils/PluginText.cs` — чистые помощники (обрезка ника,
-разбор номера версии). Они вынесены из класса плагина не ради красоты: тип, унаследованный
-от `BasePlugin`, тянет загрузку x64-сборки SwiftlyS2, и на arm64 их нельзя было бы
-проверить вовсе.
+`swiftly/` adds `Utils/PluginText.cs` — pure helpers (nickname truncation, version parsing).
+They live outside the plugin class for a concrete reason: a type deriving from `BasePlugin`
+drags in the x64-only SwiftlyS2 assembly, and on arm64 they could not be tested at all.
 
-DI-контейнера нет: сервисы создаются вручную в `Load()`. Сервисы не наследуют `BasePlugin`
-и потому не имеют доступа к таймерам — те живут в главном файле плагина. Не тащи
-`BasePlugin` внутрь `Services/`.
+There is no DI container: services are constructed by hand in `Load()`. Services do not
+derive from `BasePlugin` and therefore have no access to timers — those live in the main
+plugin file. Do not drag `BasePlugin` into `Services/`.
 
-### Нативная цель (`metamod/`)
+### Native target (`metamod/`)
 
-Разделение проходит по одной линии: **знает ли код про движок**.
+The split runs along exactly one line: **does this code know about the engine?**
 
-| Каталог | Что в нём | Проверяется |
+| Directory | Contents | Verified |
 |---|---|---|
-| `src/core/` | конфиг, тексты SQL, сессии, писатель, спул, GeoIP, чтение | локально, `make -f Makefile.tests` |
-| `src/db/` | клиент MariaDB | только CI |
-| `src/mm/` | `ISmmPlugin`, хуки, игровые события, команды | только CI |
-| `tests/` | doctest поверх `src/core` | локально |
+| `src/core/` | config, SQL text, sessions, writer, spool, GeoIP, reads, banner | locally, `make -f Makefile.tests` |
+| `src/db/` | MariaDB client | CI only |
+| `src/mm/` | `ISmmPlugin`, hooks, game events, commands | CI only |
+| `tests/` | doctest over `src/core` | locally |
 
-Это не эстетика: hl2sdk не собирается под macOS вовсе, а почти вся логика плагина
-движка не требует. Раздельная сборка означает, что сотня тестов гоняется за секунду
-на любой машине, а не только на живом сервере.
+This is not aesthetics: hl2sdk does not build on macOS at all, and almost all of the
+plugin's logic needs no engine. The split means a hundred tests run in a second on any
+machine instead of only on a live server.
 
-`IDatabase` — единственный интерфейс в ядре, и он оправдан ровно одним: без него
-писателя с его ретраями, спулом и идемпотентным закрытием сессии пришлось бы
-проверять только на боевой базе. Заглушка умеет падать по команде.
+`IDatabase` is the only interface in the core, and it earns its place: without it the
+writer — with its retries, spool and idempotent session close — could only be verified
+against a production database. The test double fails on command.
 
-### Путь данных (C#-цели; в нативной он тот же, но события другие)
+### Data path (C# targets; the native one is the same with different events)
 
 ```
-главный поток                            │ фоновый поток
+main thread                              │ background thread
 EventPlayerConnectFull                   │
   → OpenSessionFor                       │
-      GeoIpService.Lookup (IP → страна)  │
+      GeoIpService.Lookup (IP → country) │
       SessionService.Add(OpenSession)    │
       SessionWriter.Enqueue(OpenJob) ────┼──→ Channel → SessionWriter.RunAsync
-                                         │       → INSERT IGNORE + upsert игрока
-таймер пинга → OpenSession.AddPing       │       → при ошибке: ретраи → спул JSONL
+                                         │       → INSERT IGNORE + player upsert
+ping timer → OpenSession.AddPing         │       → on failure: retries → JSONL spool
 EventRoundEnd → OpenSession.NoteRoundEnd │
 EventPlayerTeam → OpenSession.NoteTeam   │
 EventPlayerDisconnect                    │
-  → StatsCollector.Collect (нативы!)     │
-  → SessionWriter.Enqueue(CloseJob) ─────┼──→ транзакция: UPDATE сессии
+  → StatsCollector.Collect (natives!)    │
+  → SessionWriter.Enqueue(CloseJob) ─────┼──→ transaction: UPDATE session
                                          │       + ch_players + ch_nicknames
 ```
 
-Через границу потоков проходят **только POCO-копии значений** (`WriteJob` и наследники).
-Ни контроллер, ни `ConVar`, ни что-либо из движка туда не попадает.
+Only **POCO copies of values** cross the thread boundary (`WriteJob` and its kin). No
+controller, no `ConVar`, nothing from the engine ever goes there.
 
-## Инварианты, которые легко сломать
+## Invariants that are easy to break
 
-Список написан на языке C#-целей, но **действует во всех трёх**: у нативной цели
-те же правила, только имена другие (`ch::SessionWriter` вместо `SessionWriter`,
-`ch_mmdb_open_memory` вместо `FileAccessMode.Memory` и так далее). Правишь инвариант —
-правь везде.
+Written in the vocabulary of the C# targets, but **all three obey them** — the native one
+just spells the names differently (`ch::SessionWriter`, `ch_mmdb_open_memory`, and so on).
+Change an invariant, change it everywhere.
 
-- **Из фонового потока — никаких нативов.** `Utilities.*`, `ConVar.*`, `Server.*`,
-  `CCSPlayerController` — только главный поток. Нарушение памяти в нативном слое убивает
-  процесс без исключения и без стека, поэтому адрес сервера и метрики игрока снимаются
-  в обработчике события, а в фон уходят уже готовые копии значений.
-- **В `Load()` и в конструкторах сервисов нативов быть не должно.** На этом этапе движок ещё
-  не поднял глобальные переменные, и любой `Server.*` / `ConVar.Find` падает с
-  `NativeException: Global Variables not initialized yet`, а плагин не грузится вовсе.
-  Поэтому регистрация сервера (`RegisterServer`) отложена на `AddTimer(3.0f, …)`.
-- **Игрока получаем ТОЛЬКО через `Utilities.GetPlayers()` или из события.**
-  `Utilities.GetPlayerFromSlot(slot)` внутри делает
-  `new CCSPlayerController(EntitySystem.GetEntityByIndex(slot + 1))` **без проверки типа
-  сущности**: для освобождённого или переиспользованного индекса вернётся чужая энтити,
-  и чтение её полей уходит по неверным смещениям — сервер падает без единой строки в консоли.
-  `IsValid` от этого не спасает: он проверяет указатель, а не тип. В плагине не должно
-  оставаться ни одного вызова `GetPlayerFromSlot`.
-- **Состояние сессии ключуется по `SteamID`, а не по номеру слота.** Массив по слотам
-  ловит и выход за границы, и переиспользование слота движком: новый игрок получил бы
-  время входа предыдущего. Ловится `SessionMathTests`.
-- **Контроллер нельзя проносить через границу кадра.** В `Task.Run`/`Server.NextFrame`
-  захватывай `SteamID`, а игрока ищи заново (`FindPlayer`). За задержку игрок успевает
-  выйти, объект освобождается, и даже обращение к `IsValid` становится чтением чужой памяти.
-- **`SessionWriter` — единственное место записи в БД, и писатель ровно один.**
-  Не заводи `Task.Run` на игрока: 64 человека на смене карты — это 64 параллельных
-  подключения к MySQL из игрового процесса.
-- **Закрытие сессии обязано быть идемпотентным.** `UPDATE … WHERE session_key = ? AND
-  ended_at IS NULL`; если затронуто 0 строк — сессия уже закрыта (задание пришло повторно
-  из спула) и счётчики трогать нельзя, иначе наигранное время удваивается. Если строки нет
-  вовсе — вставляем полную. Проверяется интеграционным тестом.
-- **Строка подключения собирается ТОЛЬКО `MySqlConnectionStringBuilder`.** Пароль с `;`
-  в интерполяции подменяет параметры подключения (`SslMode=None` и что угодно ещё).
-  `DatabaseConnectionTests` проверяет это паролем со спецсимволами.
-- **`duration_seconds` — всегда время подключения.** Настройка
-  `Collect.CountSpectatorTime` влияет только на агрегат `ch_players.total_seconds`.
-  Время вне игры пишется в `spectator_seconds` ВСЕГДА, независимо от настройки:
-  передумав, владелец сервера пересчитает агрегат, а не потеряет историю.
-- **Состояние до первого `player_team` считается игровым.** Если событие почему-то
-  не придёт, игрок не должен остаться с нулевым наигранным временем: ошибаться
-  безопаснее в сторону прежнего поведения.
-- **Префикс таблиц проходит белый список** (`SanitizePrefix`): идентификаторы в SQL
-  параметризовать нельзя, а значение приходит из конфига. Якорь в регулярке — `\z`,
-  а не `$`: в .NET `$` совпадает перед завершающим переводом строки, и `"ch_\n"`
-  проезжал бы проверку.
-- **Публичный адрес сервера берётся из конфига, а не из ConVar.** Процесс не знает
-  своего внешнего адреса: `ConVar ip` — это адрес привязки сокета, при обычной настройке
-  `0.0.0.0`. Источник — `Server.PublicAddress`; автоопределение оставлено запасным путём,
-  и его результат отбраковывается на адресе привязки, loopback и приватных сетях
-  (`IpUtil.ResolvePublicAddress`). Заполненная, но непригодная настройка **не** подменяется
-  автоопределением: иначе опечатка человека остаётся незамеченной, а в базу уезжает адрес,
-  которого он не писал. Ловится `ServerAddressTests`.
-- **Пустой адрес не затирает записанный** (`SessionWriter.ServerUpsertSql`:
-  `address = IF(VALUES(address) = '', address, VALUES(address))`). Раньше адрес
-  перезаписывался при каждом старте, поэтому исправленная вручную строка возвращалась
-  к мусору на следующем рестарте. То же правило действует для `hostname`.
-- **Секреты не попадают в лог.** `PluginLogger.Error` прогоняет текст исключения через
-  `SqlSanitizer.Mask`: MySqlConnector умеет приложить строку подключения целиком.
-- **Базы MaxMind открываются ТОЛЬКО с `FileAccessMode.Memory`.** Дефолтный `MemoryMapped`
-  читает `.mmdb` страничными отказами; в игровом процессе на overlayfs это превращается
-  в SIGBUS и убивает процесс мгновенно — без исключения, без стека, без строки в логе.
-  Цена режима `Memory` — RAM размером с базу (Country ~9 МБ, City ~60 МБ).
-- **Время везде `DateTime.UtcNow`.** Сервер с локальной таймзоной иначе пишет смешанные
-  метки, и любой отчёт по часам врёт. Соглашение держится не комментарием: в строке
-  подключения стоит `DateTimeKind=Utc`, поэтому запись значения с `Kind=Local` — исключение
-  драйвера, а не тихий сдвиг на несколько часов. Игроку время показывается в поясе
-  `DisplayTimeZone` (`TimeZoneResolver`), и это единственное место, где UTC покидает данные.
-  `DateTime.Now` допустим ровно в двух местах — метка строки лога и текст последней
-  ошибки для `css_ch_status`; в БД он не уходит.
-- **Сообщение в чат уходит только через `ChatFormat.EnsureChatColorPrefix`.** Движок CS2
-  съедает цветовой код, стоящий в самом начале сообщения, и строка вида `{GREEN}[История] …`
-  выходит белой. Ранний выход «строка уже начинается с кода цвета — вернуть как есть»
-  отключает починку ровно в том случае, когда она нужна: именно так это ломалось
-  в NotifyMessages. Ловится `ChatColorTests`.
-- **Числа форматируются через `CultureInfo.InvariantCulture`.** Без него сервер
-  с арабской или турецкой локалью показывает игрокам другие цифры (`IpAndFormatTests`).
-- **Ник обрезается до `NicknameMaxLength` (128).** Ник длиннее колонки роняет весь `INSERT`
-  с «Data too long», и сессия теряется целиком. Ник, IP и язык — недоверенные данные.
-- **Обработчики событий обёрнуты в `SafeEvent`.** Исключение в нашем хендлере не должно
-  всплывать во фреймворк и мешать другим плагинам на сервере.
-- **Открытые сессии закрываются в `Unload`, на смене карты и в `css_ch_reload`.** Иначе они
-  висят в базе, и «кто сейчас онлайн» врёт до следующего старта. Любой новый путь выхода
-  обязан звать `CloseAllSessions`.
-- **Смена карты — граница сессии.** `Listeners.OnMapStart` закрывает всё как `MapChange`,
-  игроки открывают новые сессии своим `player_connect_full`. Без этого время размазывается
-  по нескольким картам и аналитика по картам теряет смысл.
-- **Словари, ключуемые по SteamID, чистятся в `EventPlayerDisconnect`** (`_commandCooldown`),
-  иначе они растут всё время жизни сервера.
-- **Раунды считаются событием `round_end`, а не чтением схемы движка**: поля контроллера
-  обнуляются сменой карты, а нам нужно то, что игрок застал в ЭТОЙ сессии.
+- **No engine calls from a background thread.** `Utilities.*`, `ConVar.*`, `Server.*`,
+  `CCSPlayerController` — main thread only. A memory violation in the native layer kills the
+  process with no exception and no stack, which is why the server address and player metrics
+  are read inside the event handler and only finished copies travel to the background.
+- **No engine calls in `Load()` or in service constructors.** At that point the engine has
+  not raised its globals yet, and any `Server.*` / `ConVar.Find` throws
+  `NativeException: Global Variables not initialized yet` — the plugin then fails to load
+  entirely. That is why `RegisterServer` is deferred by `AddTimer(3.0f, …)`.
+- **Get a player ONLY through `Utilities.GetPlayers()` or from the event.**
+  `Utilities.GetPlayerFromSlot(slot)` internally does
+  `new CCSPlayerController(EntitySystem.GetEntityByIndex(slot + 1))` **without checking the
+  entity type**: for a freed or reused index it returns somebody else's entity, and reading
+  its fields walks the wrong offsets — the server dies without a single console line.
+  `IsValid` does not save you: it checks the pointer, not the type. There must be no
+  `GetPlayerFromSlot` call left in the plugin.
+- **Session state is keyed by `SteamID`, never by slot number.** A slot-indexed array catches
+  both out-of-range access and slot reuse by the engine: a new player would inherit the
+  previous one's join time. Covered by `SessionMathTests`.
+- **A controller must not cross a frame boundary.** Inside `Task.Run` / `Server.NextFrame`,
+  capture the `SteamID` and look the player up again (`FindPlayer`). In that gap the player
+  can leave, the object is freed, and even touching `IsValid` becomes a read of foreign memory.
+- **`SessionWriter` is the only place that writes to the database, and there is exactly one
+  writer.** Do not spawn a `Task.Run` per player: 64 players on a map change means 64
+  parallel MySQL connections from the game process.
+- **Closing a session must be idempotent.** `UPDATE … WHERE session_key = ? AND
+  ended_at IS NULL`; if 0 rows were affected the session is already closed (the job came
+  back from the spool) and the counters must not be touched, or playtime doubles. If no row
+  exists at all, insert a complete one. Covered by an integration test.
+- **The connection string is built ONLY by `MySqlConnectionStringBuilder`.** A password
+  containing `;` in an interpolated string substitutes connection parameters (`SslMode=None`
+  and anything else). `DatabaseConnectionTests` checks this with a password full of special
+  characters. The native target sidesteps the problem structurally: `mysql_real_connect`
+  takes separate arguments, so no such string exists.
+- **`duration_seconds` is always the connected time.** `Collect.CountSpectatorTime` affects
+  only the `ch_players.total_seconds` aggregate. Out-of-game time goes to `spectator_seconds`
+  ALWAYS, regardless of the setting: on changing their mind the owner recomputes the
+  aggregate instead of losing history.
+- **The state before the first `player_team` counts as in-game.** If the event never arrives,
+  a player must not end up with zero playtime: erring toward the previous behaviour is safer.
+- **The table prefix goes through a whitelist** (`SanitizePrefix`): SQL identifiers cannot be
+  parameterised and the value comes from a config file. The regex anchor is `\z`, not `$`:
+  in .NET `$` matches before a trailing newline, so `"ch_\n"` would sail through.
+- **The public server address comes from the config, not from a ConVar.** The process does
+  not know its external address: `ConVar ip` is the socket bind address, normally `0.0.0.0`.
+  The source is `Server.PublicAddress`; auto-detection is a fallback whose result is rejected
+  for bind, loopback and private addresses (`IpUtil.ResolvePublicAddress`). A filled-in but
+  unusable setting is **not** silently replaced by auto-detection: otherwise the human's typo
+  goes unnoticed and the database receives an address they never wrote. Covered by
+  `ServerAddressTests`.
+- **An empty address does not overwrite a stored one** (`SessionWriter.ServerUpsertSql`:
+  `address = IF(VALUES(address) = '', address, VALUES(address))`). The address used to be
+  rewritten on every start, so a manually corrected row reverted to garbage on the next
+  restart. The same rule applies to `hostname`.
+- **Secrets never reach the log.** `PluginLogger.Error` runs the exception text through
+  `SqlSanitizer.Mask`: MySqlConnector is happy to attach the whole connection string.
+- **MaxMind databases are opened with `FileAccessMode.Memory` ONLY.** The default
+  `MemoryMapped` reads `.mmdb` through page faults; inside a game process on overlayfs that
+  becomes a SIGBUS and kills the process instantly — no exception, no stack, no log line.
+  The cost of `Memory` is RAM the size of the database (Country ~9 MB, City ~60 MB).
+- **Time is `DateTime.UtcNow` everywhere.** A server with a local time zone would otherwise
+  write mixed timestamps and every hourly report would lie. The convention is not held by a
+  comment: the connection string carries `DateTimeKind=Utc`, so writing a `Kind=Local` value
+  is a driver exception rather than a quiet shift of a few hours. Players see time in the
+  `DisplayTimeZone` zone (`TimeZoneResolver`), and that is the only place UTC leaves the data.
+  `DateTime.Now` is allowed in exactly two places — the log line stamp and the last-error text
+  for `ch_status`; it never reaches the database.
+- **Chat messages go out only through `ChatFormat.EnsureChatColorPrefix`.** The CS2 engine
+  eats a colour code sitting at the very start of a message, so `{GREEN}[History] …` comes out
+  white. The tempting early return — "already starts with a colour code, return as is" —
+  disables the fix in exactly the case that needs it; that is how it broke in NotifyMessages.
+  Covered by `ChatColorTests`.
+- **Numbers are formatted with `CultureInfo.InvariantCulture`.** Without it a server with an
+  Arabic or Turkish locale shows players different digits (`IpAndFormatTests`).
+- **Nicknames are truncated to 128.** A nickname longer than the column brings down the whole
+  `INSERT` with "Data too long" and the session is lost entirely. Nickname, IP and language
+  are untrusted input.
+- **Event handlers are wrapped in `SafeEvent`.** An exception in our handler must not bubble
+  into the framework and disturb other plugins on the server.
+- **Open sessions are closed in `Unload`, on map change and in `ch_reload`.** Otherwise they
+  hang in the database and "who is online" lies until the next start. Every new exit path
+  must call `CloseAllSessions`.
+- **A map change is a session boundary.** `Listeners.OnMapStart` closes everything as
+  `MapChange`; players open new sessions with their own `player_connect_full`. Without this,
+  time smears across several maps and per-map analytics becomes meaningless.
+- **Dictionaries keyed by SteamID are cleaned in the disconnect handler**
+  (`_commandCooldown`), or they grow for the whole lifetime of the server.
+- **Rounds are counted from the `round_end` event, not read off the engine schema**: the
+  controller's fields are reset by a map change, and we need what the player saw in THIS session.
 
-## Конфигурация
+## Configuration
 
-Два файла в `csgo/addons/counterstrikesharp/configs/plugins/ConnectHistory/`:
-`Settings.json` и `Messages.json`. Рядом — `*.schema.json` и `README.txt`, оба
-**перезаписываются при каждой загрузке**: пока README писался только при первом запуске,
-после обновления плагина он описывал старую версию.
+Two files: `Settings.json` and `Messages.json`, plus `*.schema.json` and `README.txt` next to
+them. The latter two are **rewritten on every load**: while the README was written on first
+run only, it described the previous version after every update.
 
-Битый файл **не роняет плагин и не перезаписывается**: `LoadPart<T>` ловит `JsonException`,
-пишет в лог файл, строку и позицию ошибки, и берёт значения по умолчанию. Trailing commas
-и `//`-комментарии разрешены осознанно — это самые частые «ошибки» в руками правленом
-конфиге. Ловится `ConfigResilienceTests`.
+Config directories differ per target — see the table in `README.md`. The file format is
+identical, so both files move between platforms unchanged.
 
-`Settings.json` содержит пароль, поэтому плагин выставляет ему права `600`
-(`ConfigService.ProtectSecrets`) и **не кладёт конфиг в релизный архив**.
+A broken file **does not crash the plugin and is not overwritten**: the loader catches the
+parse error, logs the file, line and position, and falls back to defaults. Trailing commas
+and `//` comments are allowed deliberately — they are the most common "mistakes" in a
+hand-edited config. Covered by `ConfigResilienceTests`. Overwriting a broken config would
+destroy a human's work along with their typo.
 
-**Добавление новой настройки — четыре правки:** поле в модель (`Models/ConfigModels.cs`) →
-строка в `ConfigService.Merge` → значение в `CreateDefaultSettings` → свойство в схеме
-(`ConfigService.Schemas.cs`). Пропуск `Merge` — молчаливый дефолт в рантайме;
-пропуск схемы — поле, о котором редактор промолчит.
+`Settings.json` contains a password, so the plugin sets mode `600` on it and **never ships
+it in the release archive** — the release workflow fails if it finds one.
 
-## Схема БД
+**Adding a setting is four edits:** field in the model → line in the merge step → value in
+the defaults → property in the schema. Skipping the merge gives a silent runtime default;
+skipping the schema gives a field the editor will say nothing about.
 
-Шесть таблиц с префиксом из конфига: `sessions`, `players`, `nicknames`, `servers`,
-`online_snapshots`, `schema_version`. DDL живёт в `SchemaService.BuildSchema`
-(в нативной цели — `ch::BuildSchema` в `core/schema_sql.cpp`) и обязан оставаться
-идемпотентным — плагин перезагружают на живом сервере.
+## Database schema
 
-**Текст DDL совпадает во всех трёх целях до символа.** Это и есть контракт: схема,
-созданная одним плагином, обязана подойти двум другим без миграции.
+Six tables with the configured prefix: `sessions`, `players`, `nicknames`, `servers`,
+`online_snapshots`, `schema_version`. The DDL lives in `SchemaService.BuildSchema`
+(`ch::BuildSchema` in `core/schema_sql.cpp`) and must stay idempotent — the plugin gets
+reloaded on a live server.
 
-Внешних ключей нет сознательно: они связали бы историю с агрегатами и сделали
-невозможной чистку старых сессий без каскадов.
+**The DDL text is identical across all three targets, character for character.** That is the
+contract: a schema created by one plugin must fit the other two without migration.
 
-Меняешь схему — поднимаешь версию и добавляешь шаг в `Migrations`. **Во всех трёх целях
-разом**: `SchemaService.CurrentVersion` в C# и `ch::kSchemaVersion` в C++.
-`SchemaTests` (C#) и `test_sql.cpp` (C++) следят, чтобы версия не отставала
-от лестницы миграций и чтобы каждый шаг был достижим.
+There are deliberately no foreign keys: they would tie history to aggregates and make it
+impossible to clean old sessions without cascades.
 
-Текущая версия — **3**. Шаг до 2-й чистит `ch_servers.address` от адресов привязки
-(`0.0.0.0…`), которые писала версия 1: `UPDATE`, а не `DELETE` — испорчено одно поле,
-а не строка сервера. Шаг до 3-й добавляет `ch_sessions.spectator_seconds`.
-Оба проверяются интеграционными тестами на живой MySQL.
+Changing the schema means bumping the version and adding a migration step — **in all three
+targets at once**: `SchemaService.CurrentVersion` in C# and `ch::kSchemaVersion` in C++.
+`SchemaTests` (C#) and `test_sql.cpp` (C++) check that the version does not lag behind the
+migration ladder and that every step is reachable.
 
-**Шаг миграции обязан переживать повторное применение.** У `ALTER` в MySQL нет формы
-`IF NOT EXISTS` (это MariaDB), а на свежей базе колонка уже приезжает из `BuildSchema`,
-поэтому `ApplyMigrationAsync` (в C++ — `IsAlreadyAppliedError`) трактует ошибки
-1050/1060/1061 («объект уже существует») как «шаг применён». Условный DDL через
-`SET @переменную` не годится: MySqlConnector считает `@имя` placeholder'ом параметра,
-и запрос до сервера не доходит.
+Current version is **3**. Step 2 cleans `ch_servers.address` of bind addresses (`0.0.0.0…`)
+written by version 1 — an `UPDATE`, not a `DELETE`, because one field is broken, not the
+server row. Step 3 adds `ch_sessions.spectator_seconds`. Both are covered by integration
+tests against a live MySQL.
 
-Полный контракт колонок и готовые запросы — `docs/DATABASE.md`. Он же служит документацией
-для тех, кто читает базу снаружи; модуль панели — `docs/FLUTE_MODULE.md`.
+**A migration step must survive being applied twice.** `ALTER` has no `IF NOT EXISTS` form in
+MySQL (that is MariaDB), and on a fresh database the column already arrives from
+`BuildSchema`, so errors 1050/1060/1061 ("object already exists") are treated as "step
+applied" (`ApplyMigrationAsync`, `IsAlreadyAppliedError`). Conditional DDL through
+`SET @variable` does not work: MySqlConnector treats `@name` as a parameter placeholder and
+the query never reaches the server.
 
-**Расхождения между целями фиксируются там же, в разделе «Расхождения между целями».**
-Сейчас их три, все — следствие правила «никаких сигнатур и смещений» в нативной цели:
-`score` и `ping_*` остаются `NULL`, а `disconnect_reason_name` там имеет вид
-`REASON_<код>`. Молчаливое расхождение хуже отсутствия фичи: отчёт по нескольким
-серверам сойдётся неверно, и никто не поймёт почему.
+The full column contract and a query cookbook live in `docs/DATABASE.md`, which doubles as
+documentation for anyone reading the database from outside.
 
-## Логирование
+**Divergences between targets are recorded there**, in the "Differences between targets"
+section. There are four right now, all consequences of the "no signatures, no offsets" rule
+in the native target. A silent divergence is worse than a missing feature.
 
-`ILogger` → `PluginLogger` (формат `[timestamp] [ConnectHistory] [LEVEL] msg`).
-`Debug(...)` печатает только при `Config.Debug == true` (по умолчанию **выключено** — Debug
-пишет SteamID, ники и IP игроков). Флаг читается через замыкание, поэтому подхватывается
-после перезагрузки конфигурации. `Console.WriteLine` напрямую не использовать:
-в `cssharp/` он остался исторически, в `swiftly/` логи идут через `Core.Logger`
-(и через `[LoggerMessage]`, иначе анализаторы справедливо ругаются),
-в `metamod/` — через `META_CONPRINTF`.
+## Logging
 
-## Версии
+`ILogger` → `PluginLogger`, format `[timestamp] [ConnectHistory] [LEVEL] msg`.
+`Debug(...)` prints only when `Config.Debug == true` (off by default — Debug prints
+SteamIDs, nicknames and player IPs). The flag is read through a closure, so it takes effect
+right after a config reload.
 
-**Версию руками нигде не поднимаем.** Единственный источник — тег релиза; job `version`
-в `release.yml` вычисляет её один раз и раздаёт всем целям.
+`ILogger.Raw` exists for exactly one consumer: the startup banner, whose frame a per-line
+prefix would tear apart.
 
-- `cssharp/`: `ModuleVersion` резолвится из `AssemblyInformationalVersionAttribute`
-  собранной сборки (`ResolveModuleVersion` / `FormatModuleVersion`), хвост `+sha`
-  отрезается. Ловится `ModuleVersionTests`.
-- `swiftly/`: то же плюс `PluginVersion.g.cs`, который MSBuild генерирует из `<Version>` —
-  атрибуту `PluginMetadata` нужна константа времени компиляции.
-- `metamod/`: CI перезаписывает `src/mm/version.h` из тега; в репозитории лежит
-  фолбэк `0.0.0-dev`.
+Do not call `Console.WriteLine` directly. In `cssharp/` it remains for historical reasons; in
+`swiftly/` logging goes through `Core.Logger` (and through `[LoggerMessage]`, or the analyzers
+rightly complain); in `metamod/` through `META_CONPRINTF`.
 
-## Граф проекта
+The banner frame is computed rather than padded with hardcoded spaces: the version comes from
+the release tag and can be longer than expected, and a broken frame in the server console is
+the first thing an owner sees about this plugin. Covered by `BannerTests` / `test_banner.cpp`.
 
-В `graphify-out/` лежит построенный граф кода (`graph.json`, `GRAPH_REPORT.md`).
-Вопросы вида «что вызывает X», «как связаны Y и Z» быстрее решать через
-`graphify query "..."`, чем полным перечитыванием файлов. После заметных изменений
-кода — `graphify <путь> --update`.
+## Versions
 
-Граф построен ДО разделения репозитория на три цели и путей `cssharp/`, `swiftly/`,
-`metamod/` не знает — перед тем, как на него опираться, перестрой.
+**Never bump a version by hand.** The single source is the release tag; the `version` job in
+`release.yml` computes it once and hands it to every target.
+
+- `cssharp/`: `ModuleVersion` is resolved from `AssemblyInformationalVersionAttribute` of the
+  built assembly (`ResolveModuleVersion` / `FormatModuleVersion`), with the `+sha` tail cut
+  off. Covered by `ModuleVersionTests`.
+- `swiftly/`: the same, plus `PluginVersion.g.cs` generated by MSBuild from `<Version>` —
+  the `PluginMetadata` attribute needs a compile-time constant.
+- `metamod/`: CI rewrites `src/mm/version.h` from the tag; the repository holds a
+  `0.0.0-dev` fallback.
+
+## Releases
+
+`CHANGELOG.md` is the source of the release body. Add a section for the version **before**
+tagging; `release.yml` extracts that section and puts it in the GitHub release, so the
+release notes say what was added and fixed instead of dumping a commit list.
+
+Keep entries short and grouped as `### Added` / `### Fixed` / `### Changed`.
+
+## Code graph
+
+`graphify-out/` holds a generated code graph (`graph.json`, `GRAPH_REPORT.md`). Questions
+like "what calls X" or "how are Y and Z related" are faster through `graphify query "..."`
+than by re-reading files. After noticeable changes: `graphify <path> --update`.
+
+The current graph was built **before** the repository was split into three targets and knows
+nothing about the `cssharp/`, `swiftly/` and `metamod/` paths — rebuild it before relying on it.

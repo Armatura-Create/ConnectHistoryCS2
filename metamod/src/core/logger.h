@@ -19,6 +19,10 @@ public:
 
     // Debug печатает SteamID, ники и IP игроков — по умолчанию выключен.
     virtual void Debug(const std::string& message) = 0;
+
+    // Строка без уровня. Нужна ровно одному потребителю — заставке при загрузке:
+    // префикс на каждой строке разорвал бы рамку.
+    virtual void Raw(const std::string& message) = 0;
 };
 
 // Логгер, который молчит. Нужен там, где логирование необязательно
@@ -29,6 +33,7 @@ public:
     void Warn(const std::string&) override {}
     void Error(const std::string&) override {}
     void Debug(const std::string&) override {}
+    void Raw(const std::string&) override {}
 };
 
 }  // namespace ch

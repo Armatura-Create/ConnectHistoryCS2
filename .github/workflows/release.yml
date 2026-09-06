@@ -385,33 +385,65 @@ jobs:
   publish:
     needs: [version, cssharp, swiftly, metamod-package]
     runs-on: ubuntu-latest
+    env:
+      PLUGIN_VERSION: ${{ needs.version.outputs.version }}
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           pattern: release-*
           merge-multiple: true
 
-      - name: List
+      - name: List artifacts
         run: ls -la artifacts
+
+      # The release body comes from CHANGELOG.md: a short "added / fixed" beats an
+      # automatic list of commits. No section means no release - quietly shipping a
+      # version with no description is worse than failing here.
+      - name: Compose release notes
+        run: |
+          set -euo pipefail
+
+          python3 - "$PLUGIN_VERSION" > changelog-section.md <<'PY'
+          import re, sys
+          version = sys.argv[1]
+          text = open('CHANGELOG.md', encoding='utf-8').read()
+          match = re.search(r'^## +' + re.escape(version) + r'\s*$(.*?)(?=^## |\Z)',
+                            text, re.M | re.S)
+          if match is None or not match.group(1).strip():
+              sys.stderr.write(f'::error::CHANGELOG.md has no section for {version}\n')
+              sys.exit(1)
+          print(match.group(1).strip())
+          PY
+
+          {
+            cat changelog-section.md
+            echo
+            echo "---"
+            echo
+            echo "Requires **MySQL 5.7 / 8.0+** (or MariaDB 10.4+)."
+            echo
+            echo "| Archive | Requirements |"
+            echo "|---|---|"
+            echo "| \`ConnectHistory_cssharp_${PLUGIN_VERSION}.zip\` | CounterStrikeSharp >= 1.0.369 (Metamod:Source) |"
+            echo "| \`ConnectHistory_swiftly_${PLUGIN_VERSION}.zip\` | SwiftlyS2 >= 1.4.9 (Metamod not needed) |"
+            echo "| \`ConnectHistory_metamod_${PLUGIN_VERSION}.zip\` | Metamod:Source (native; Windows + Linux in one archive) |"
+            echo
+            echo "Extract into the root of your game server. The plugin creates its configs and"
+            echo "database tables on first run: fill in the \`Database\` section of \`Settings.json\`"
+            echo "and reload the configuration."
+            echo
+            echo "Schema and query cookbook: [docs/DATABASE.md](docs/DATABASE.md)."
+          } > release-notes.md
+
+          cat release-notes.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           name: ${{ needs.version.outputs.tag }}
-          generate_release_notes: true
+          body_path: release-notes.md
           files: artifacts/*.zip
-          body: |
-            Требуется **MySQL 5.7 / 8.0+** (или MariaDB 10.4+).
-
-            | Архив | Куда ставить | Требования |
-            |---|---|---|
-            | `ConnectHistory_cssharp_${{ needs.version.outputs.version }}.zip` | корень игрового сервера | CounterStrikeSharp ≥ 1.0.369 (Metamod:Source) |
-            | `ConnectHistory_swiftly_${{ needs.version.outputs.version }}.zip` | корень игрового сервера | SwiftlyS2 ≥ 1.4.9 (Metamod не нужен) |\n            | `ConnectHistory_metamod_${{ needs.version.outputs.version }}.zip` | корень игрового сервера | Metamod:Source (нативный плагин, Windows + Linux в одном архиве) |
-
-            Плагин сам создаст конфиги и таблицы при первом запуске: заполните секцию
-            `Database` в `Settings.json` и перезагрузите конфигурацию.
-
-            Схема базы и готовые запросы — `docs/DATABASE.md`,
-            модуль для панели Flute CMS — `docs/FLUTE_MODULE.md`.

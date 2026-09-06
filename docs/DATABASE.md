@@ -1,145 +1,157 @@
-# ConnectHistory — схема базы и готовые запросы
+# Database schema and query cookbook
 
-Всё, что нужно, чтобы читать данные плагина из панели, отчёта или скрипта.
-Таблицы создаются самим плагином при первом запуске, префикс задаётся
-`Database.TablePrefix` (по умолчанию `ch_`).
+Everything you need to read this plugin's data from a panel, a report or a script.
+Tables are created by the plugin on first run; the prefix comes from
+`Database.TablePrefix` (`ch_` by default).
 
-> **Этот документ — контракт.** Плагин существует в трёх независимых реализациях
-> (CounterStrikeSharp, SwiftlyS2, нативный Metamod:Source), и код у них не общий.
-> Общая у них ровно эта схема: все три пишут одни и те же таблицы, и запросы ниже
-> работают одинаково независимо от того, каким плагином записана строка.
-> Немногочисленные расхождения перечислены в разделе
-> [«Расхождения между целями»](#расхождения-между-целями) — читателю базы важно
-> знать только их.
+> **This document is a contract.** The plugin exists as three independent
+> implementations — CounterStrikeSharp, SwiftlyS2 and native Metamod:Source — and
+> they share no code. What they do share is this schema: all three write the same
+> tables, and every query below behaves identically no matter which plugin wrote
+> the row. The handful of differences is listed in
+> [Differences between targets](#differences-between-targets); that section is the
+> only target-specific thing a reader of the database needs to know.
 
-## Время
+**Contents**
 
-**Все метки времени в базе — UTC.** MySQL хранит `DATETIME` без часового пояса, поэтому
-это соглашение держится строкой подключения: плагин ставит `DateTimeKind=Utc`, и драйвер
-откажется записать значение с локальным `Kind`, а прочитанное вернёт помеченным как UTC.
-Проверяется интеграционным тестом: колонка содержит ровно те цифры, что были отправлены.
+- [The one idea behind the schema](#the-one-idea-behind-the-schema)
+- [Time](#time)
+- [Tables](#tables)
+- [Playtime and spectators](#playtime-and-spectators)
+- [Differences between targets](#differences-between-targets)
+- [Query cookbook](#query-cookbook)
+- [Grants](#grants)
+- [Retention](#retention)
 
-Настройка `DisplayTimeZone` в `Settings.json` влияет **только** на то, в каком поясе время
-показывают игрокам командами `playtime` и `lastseen`. На данные она не влияет
-никак — читателям базы её можно игнорировать.
+## The one idea behind the schema
 
-Сравнивать с текущим моментом нужно через `UTC_TIMESTAMP()`, а не `NOW()`: второй отдаёт
-время в поясе сессии MySQL и на сервере с локальной таймзоной даст сдвиг.
+**A session row is created when the player joins, not when they leave.**
 
-## Главная идея схемы
+Three consequences, and almost every query below rests on them:
 
-**Строка сессии создаётся на ВХОДЕ игрока, а не на выходе.**
-
-Из этого следует три вещи, на которых строятся почти все запросы ниже:
-
-| Состояние строки | Что это значит |
+| Row state | Meaning |
 |---|---|
-| `ended_at IS NULL` и `end_kind = 0` | игрок **сейчас на сервере** |
-| `ended_at IS NOT NULL` | сессия завершилась штатно, итоги заполнены |
-| `ended_at IS NULL` и `end_kind = 5` | сервер завершился аварийно во время сессии |
+| `ended_at IS NULL` and `end_kind = 0` | the player is **on the server right now** |
+| `ended_at IS NOT NULL` | the session ended normally, results are filled in |
+| `ended_at IS NULL` and `end_kind = 5` | the server died while the session was open |
 
-Онлайн читается обычным `SELECT`, без RCON и A2S. Падения сервера видны в тех же
-данных, отдельного мониторинга для этого не нужно.
+"Who is online" is a plain `SELECT` — no RCON, no A2S. Server crashes show up in the
+same data, so they need no separate monitoring.
 
-## Таблицы
+## Time
 
-### `ch_sessions` — ядро
+**Every timestamp in the database is UTC.** MySQL stores `DATETIME` without a time
+zone, so the convention is enforced by the connection itself: the C# targets set
+`DateTimeKind=Utc`, and the driver refuses to write a value with a local `Kind`.
+An integration test checks that the column holds exactly the digits that were sent.
 
-| Колонка | Тип | Смысл |
+`DisplayTimeZone` in `Settings.json` affects **only** the zone players see in the
+`playtime` / `lastseen` commands. It never touches stored data — readers can ignore it.
+
+Compare against `UTC_TIMESTAMP()`, not `NOW()`: the latter returns the MySQL session's
+zone and will be off on a server with a local time zone.
+
+## Tables
+
+### `ch_sessions` — the core
+
+| Column | Type | Meaning |
 |---|---|---|
-| `id` | BIGINT UNSIGNED | автоинкремент |
-| `session_key` | CHAR(32) | ключ, сгенерированный плагином; по нему идёт закрытие сессии |
-| `steamid64` | BIGINT UNSIGNED | полный SteamID64 |
-| `account_id` | INT UNSIGNED | младшие 32 бита SteamID64 (привычный Steam account ID) |
-| `server_id` | INT | `ServerId` из конфига сервера → `ch_servers.id` |
-| `nickname` | VARCHAR(128) | ник на момент выхода (на входе, если сессия не закрыта) |
-| `started_at` | DATETIME | вход, UTC |
-| `ended_at` | DATETIME NULL | выход; `NULL` = сессия открыта |
-| `duration_seconds` | INT UNSIGNED NULL | длительность подключения |
-| `spectator_seconds` | INT UNSIGNED NULL | из них в наблюдателях и без команды; `NULL` — версия схемы < 3 |
-| `end_kind` | TINYINT | 0 open, 1 disconnect, 2 map change, 3 shutdown, 4 plugin unload, 5 stale (аварийное завершение) |
-| `connect_map` / `disconnect_map` | VARCHAR(64) | карта на входе и на выходе |
-| `disconnect_reason` | SMALLINT NULL | код причины из перечисления Valve |
-| `disconnect_reason_name` | VARCHAR(64) NULL | он же словами: `DISCONNECT_BY_USER`, `KICKED`, `STEAM_DROPPED`, … |
-| `players_online` | SMALLINT UNSIGNED | сколько людей было на сервере в момент входа |
-| `max_players` | SMALLINT UNSIGNED | слотов на сервере |
-| `client_lang` | VARCHAR(8) NULL | язык клиента (`ru`, `en`) |
-| `player_ip` | VARCHAR(45) NULL | IP игрока (если включён `Collect.PlayerIp`) |
-| `ip_hash` | CHAR(64) NULL | HMAC-SHA256 от IP с солью из конфига |
-| `ip_subnet` | VARCHAR(45) NULL | `/24` для IPv4, `/48` для IPv6 |
+| `id` | BIGINT UNSIGNED | auto-increment |
+| `session_key` | CHAR(32) | key generated by the plugin; the close `UPDATE` matches on it |
+| `steamid64` | BIGINT UNSIGNED | full SteamID64 |
+| `account_id` | INT UNSIGNED | low 32 bits of SteamID64 (the familiar Steam account ID) |
+| `server_id` | INT | `ServerId` from the server config → `ch_servers.id` |
+| `nickname` | VARCHAR(128) | nickname on leave (on join if the session is still open) |
+| `started_at` | DATETIME | join, UTC |
+| `ended_at` | DATETIME NULL | leave; `NULL` = session open |
+| `duration_seconds` | INT UNSIGNED NULL | connected time |
+| `spectator_seconds` | INT UNSIGNED NULL | of which spent spectating or unassigned; `NULL` = schema below v3 |
+| `end_kind` | TINYINT | 0 open, 1 disconnect, 2 map change, 3 shutdown, 4 plugin unload, 5 stale (server died) |
+| `connect_map` / `disconnect_map` | VARCHAR(64) | map on join and on leave |
+| `disconnect_reason` | SMALLINT NULL | Valve's disconnect reason code |
+| `disconnect_reason_name` | VARCHAR(64) NULL | the same in words: `DISCONNECT_BY_USER`, `KICKED`, … |
+| `players_online` | SMALLINT UNSIGNED | humans on the server at the moment of joining |
+| `max_players` | SMALLINT UNSIGNED | server slots |
+| `client_lang` | VARCHAR(8) NULL | client language (`ru`, `en`) |
+| `player_ip` | VARCHAR(45) NULL | player IP (when `Collect.PlayerIp` is on) |
+| `ip_hash` | CHAR(64) NULL | HMAC-SHA256 of the IP with the configured salt |
+| `ip_subnet` | VARCHAR(45) NULL | `/24` for IPv4, `/48` for IPv6 |
 | `country_iso` / `country_name` / `city` | | GeoLite2 |
-| `kills`, `deaths`, `assists`, `headshots`, `damage`, `mvp`, `score` | | итоги матча |
-| `rounds_played` | SMALLINT UNSIGNED NULL | раундов, законченных при игроке |
+| `kills`, `deaths`, `assists`, `headshots`, `damage`, `mvp`, `score` | | match results |
+| `rounds_played` | SMALLINT UNSIGNED NULL | rounds finished while the player was present |
 | `team_final` | TINYINT NULL | 1 spectator, 2 T, 3 CT |
-| `team_changes` | SMALLINT UNSIGNED NULL | сколько раз менял команду |
-| `ping_avg`, `ping_min`, `ping_max`, `ping_samples` | | пинг за сессию, замеры раз в `PingSampleIntervalSeconds` |
-| `plugin_version` | VARCHAR(32) | какая сборка плагина писала строку |
+| `team_changes` | SMALLINT UNSIGNED NULL | how many times the team changed |
+| `ping_avg`, `ping_min`, `ping_max`, `ping_samples` | | ping over the session |
+| `plugin_version` | VARCHAR(32) | which plugin build wrote the row |
 
-Индексы: `uq_session_key`, `(steamid64, started_at)`, `(server_id, started_at)`,
+Indexes: `uq_session_key`, `(steamid64, started_at)`, `(server_id, started_at)`,
 `(started_at)`, `(ended_at)`.
 
-### `ch_players` — агрегаты
+### `ch_players` — aggregates
 
 `steamid64` (PK), `account_id`, `first_seen`, `last_seen`, `sessions_count`,
 `total_seconds`, `last_nickname`, `last_country`, `last_server_id`.
 
-Обновляется при закрытии сессии в одной транзакции с ней, поэтому не расходится
-с `ch_sessions`. Строка появляется уже на входе игрока — с нулевыми счётчиками.
+Updated when a session closes, in the same transaction, so it never drifts from
+`ch_sessions`. The row appears on join already, with zeroed counters.
 
-### `ch_nicknames` — история ников
+### `ch_nicknames` — nickname history
 
-`steamid64` + `nickname` (уникальная пара), `first_seen`, `last_seen`, `times_seen`.
+`steamid64` + `nickname` (unique pair), `first_seen`, `last_seen`, `times_seen`.
 
-### `ch_servers` — справочник
+### `ch_servers` — server directory
 
-`id` (PK, `ServerId` из конфига), `address` (`ip:port`), `hostname`, `first_seen`, `last_seen`.
+`id` (PK, `ServerId` from the config), `address` (`ip:port`), `hostname`,
+`first_seen`, `last_seen`.
 
-Адрес сервера лежит здесь **один раз**, а не дублируется в каждой строке истории.
+The server address lives here **once** instead of being duplicated into every
+history row.
 
-**Про `address`.** Процесс игрового сервера своего публичного адреса не знает:
-ConVar `ip` отдаёт адрес *привязки сокета*, и при обычной настройке это `0.0.0.0`
-(«слушаю все интерфейсы»). Поэтому адрес берётся из `Server.PublicAddress`
-в `Settings.json`, а автоопределение — только запасной путь, результат которого
-отбраковывается, если получился адрес привязки, loopback или приватная сеть.
+**About `address`.** A game server process does not know its own public address:
+ConVar `ip` returns the *socket bind* address, which is normally `0.0.0.0`
+("listening on everything"). So the address comes from `Server.PublicAddress` in
+`Settings.json`, and auto-detection is only a fallback whose result is rejected if
+it turns out to be a bind address, loopback or a private network.
 
-Из этого следуют два свойства, на которые можно опираться:
+Two properties follow, and you can rely on both:
 
-- **Пустая строка означает «адрес неизвестен»**, а не «данных нет». Значения
-  `0.0.0.0:27015` в колонке больше не появляются.
-- **Пустое значение не затирает записанное.** Плагин обновляет `address` только
-  когда ему есть что записать, поэтому один неудачный старт не портит справочник.
+- **An empty string means "address unknown"**, not "no data". `0.0.0.0:27015` no
+  longer appears in the column.
+- **An empty value does not overwrite a stored one.** The plugin updates `address`
+  only when it has something to say, so one bad start cannot corrupt the directory.
 
-Базы, созданные версией схемы 1, чистятся автоматически при переходе на версию 2:
-значения вида `0.0.0.0…` заменяются пустой строкой, строки серверов сохраняются.
+Databases created by schema v1 are cleaned automatically on the way to v2: values
+like `0.0.0.0…` become an empty string, and the server rows are kept.
 
-### `ch_online_snapshots` — график посещаемости
+### `ch_online_snapshots` — attendance chart
 
 `server_id`, `taken_at`, `players`, `bots`, `max_players`, `map`.
-Точка снимается раз в `OnlineSnapshotIntervalSeconds` (по умолчанию 5 минут).
+A point is taken every `OnlineSnapshotIntervalSeconds` (5 minutes by default).
 
 ### `ch_schema_version`
 
-`k` = `'schema'`, `v` — версия схемы. Плагин сам мигрирует базу вверх; читателям
-эта таблица нужна только чтобы понимать, каких колонок ждать.
+`k` = `'schema'`, `v` = schema version. The plugin migrates the database upwards on
+its own; readers only need this table to know which columns to expect.
 
-| Версия | Что появилось |
+| Version | What it added |
 |---|---|
-| 1 | Исходная схема |
-| 2 | Чистка `ch_servers.address` от адресов привязки (`0.0.0.0…`) |
-| 3 | Колонка `ch_sessions.spectator_seconds` |
+| 1 | Initial schema |
+| 2 | Cleanup of `ch_servers.address` from bind addresses (`0.0.0.0…`) |
+| 3 | The `ch_sessions.spectator_seconds` column |
 
-### Наигранное время и наблюдатели
+## Playtime and spectators
 
-`duration_seconds` — это всегда время подключения. Сколько из него игрок провёл
-наблюдателем или без команды, лежит в `spectator_seconds` и пишется **всегда**,
-независимо от настроек.
+`duration_seconds` is always the connected time. How much of it the player spent
+spectating or unassigned goes to `spectator_seconds`, and it is written **always**,
+regardless of settings.
 
-На `ch_players.total_seconds` влияет `Collect.CountSpectatorTime`: при `false`
-в агрегат уходит `duration_seconds - spectator_seconds`. Поэтому топ по
-наигранному можно считать двумя способами, не меняя настройку:
+`Collect.CountSpectatorTime` only affects `ch_players.total_seconds`: when `false`,
+the aggregate receives `duration_seconds - spectator_seconds`. So a playtime
+leaderboard can be built either way without touching the setting:
 
 ```sql
--- Чистое игровое время за 30 дней, независимо от настройки плагина
+-- Pure in-game time over 30 days, whatever the plugin setting is
 SELECT steamid64,
        ROUND(SUM(duration_seconds - COALESCE(spectator_seconds, 0)) / 3600, 1) AS hours
 FROM ch_sessions
@@ -149,55 +161,55 @@ ORDER BY hours DESC
 LIMIT 50;
 ```
 
-`NULL` в `spectator_seconds` означает «сессия записана схемой ниже 3-й версии,
-тогда не измеряли» — `COALESCE` трактует такие строки как «весь сеанс игровой».
+`NULL` in `spectator_seconds` means "written by a schema older than v3, not measured
+back then" — `COALESCE` treats such rows as fully in-game.
 
-## Расхождения между целями
+## Differences between targets
 
-Три реализации пишут одну схему, но не всё доступно каждой из них одинаково.
-Единственный практический вывод для читателя базы: перечисленные ниже колонки
-могут быть `NULL` не потому, что «данных не было», а потому, что конкретная
-цель их не собирает.
+All three implementations write the same schema, but not everything is equally
+reachable from each of them. The practical takeaway for a reader: the columns below
+may be `NULL` not because there was no data, but because that particular target does
+not collect them.
 
-| Колонка | CounterStrikeSharp | SwiftlyS2 | Metamod (нативный) |
+| Column | CounterStrikeSharp | SwiftlyS2 | Metamod (native) |
 |---|---|---|---|
-| `kills`, `deaths`, `assists`, `headshots`, `damage`, `mvp` | да | да | да (из игровых событий) |
-| `rounds_played`, `team_final`, `team_changes` | да | да | да |
-| `score` | да | да | **всегда `NULL`** |
-| `ping_avg`, `ping_min`, `ping_max`, `ping_samples` | да | да | **всегда `NULL`** |
-| всё остальное | да | да | да |
+| `kills`, `deaths`, `assists`, `headshots`, `damage`, `mvp` | yes | yes | yes (from game events) |
+| `rounds_played`, `team_final`, `team_changes` | yes | yes | yes |
+| `score` | yes | yes | **always `NULL`** |
+| `ping_avg`, `ping_min`, `ping_max`, `ping_samples` | yes | yes | **always `NULL`** |
+| everything else | yes | yes | yes |
 
-**Почему в нативной цели нет счёта и пинга.** Оба живут только в полях
-контроллера игрока, а чтобы добраться до контроллера, нужен указатель на
-`CGameEntitySystem`, добываемый смещением от `GameResourceServiceServer`. Это
-единственная константа, которую пришлось бы захардкодить, и ломается она ровно
-тогда, когда Valve двигает структуру, — то есть в любое обновление игры. Цена
-неверна: убийства, смерти, помощь, урон, MVP и раунды берутся из игровых
-событий и такой платы не требуют.
+**Why the native target has no score or ping.** Both live only in the player
+controller's fields, and reaching the controller requires a pointer to
+`CGameEntitySystem` obtained by an offset from `GameResourceServiceServer`. That is
+the single constant the plugin would have to hardcode, and it breaks exactly when
+Valve moves the structure — that is, on any game update. The price is wrong: kills,
+deaths, assists, damage, MVP and rounds all come from game events and cost nothing.
 
-Если отчёт строится по нескольким серверам с разными плагинами, счёт и пинг
-стоит считать по `WHERE ping_samples IS NOT NULL`, а не по `> 0`.
+When a report spans servers running different plugins, filter ping with
+`WHERE ping_samples IS NOT NULL` rather than `> 0`.
 
-### Мелочи, на которые запросы не влияют
+### Smaller differences that queries do not care about
 
-* **Длина ника.** C#-цели режут ник до 128 **символов**, нативная — до 128
-  **байт** по границе UTF-8. Колонка `VARCHAR(128)` вмещает обе, разница видна
-  только на очень длинных никах из кириллицы или эмодзи.
-* **`disconnect_reason_name`.** C#-цели пишут человекочитаемое имя причины
-  (`DISCONNECT_BY_USER`), нативная — `REASON_<код>`: таблица из полутора сотен
-  констант разъехалась бы с игрой на первом обновлении. Сам код в
-  `disconnect_reason` одинаков везде и является единственным надёжным
-  основанием для группировки.
-* **`DisplayTimeZone`.** Нативная цель понимает `UTC`, `Local` и смещение вида
-  `+03:00`, но не имена IANA. На данные это не влияет никак: в базе всегда UTC.
-* **`ch_online_snapshots.bots`.** У нативной цели всегда `0`: она считает онлайн
-  по своему реестру сессий, а ботов туда не заводит (у них нет SteamID). Колонка
-  `players` при этом верна у всех трёх — она и так считает только людей. Графики
-  посещаемости строятся по `players`, так что на них это не сказывается.
+* **Nickname length.** The C# targets cut nicknames at 128 **characters**, the
+  native one at 128 **bytes** on a UTF-8 boundary. `VARCHAR(128)` holds both; the
+  difference only shows on very long Cyrillic or emoji nicknames.
+* **`disconnect_reason_name`.** The C# targets write a human-readable name
+  (`DISCONNECT_BY_USER`); the native one writes `REASON_<code>`, because a table of
+  a hundred and fifty constants would drift from the game on the first update. The
+  numeric `disconnect_reason` is identical everywhere and is the only reliable thing
+  to group by.
+* **`DisplayTimeZone`.** The native target understands `UTC`, `Local` and an offset
+  like `+03:00`, but not IANA names. This never touches the data: the database is
+  always UTC.
+* **`ch_online_snapshots.bots`.** Always `0` for the native target: it counts online
+  players from its own session registry, and bots never enter it (they have no
+  SteamID). The `players` column is correct in all three — it only counts humans
+  anyway — so attendance charts are unaffected.
 
-## Готовые запросы
+## Query cookbook
 
-### Кто сейчас на сервере
+### Who is on the server right now
 ```sql
 SELECT nickname, steamid64, started_at,
        TIMESTAMPDIFF(SECOND, started_at, UTC_TIMESTAMP()) AS online_seconds
@@ -206,7 +218,7 @@ WHERE server_id = 1 AND ended_at IS NULL AND end_kind = 0
 ORDER BY started_at;
 ```
 
-### Топ по наигранному времени
+### Playtime leaderboard
 ```sql
 SELECT last_nickname, steamid64,
        ROUND(total_seconds / 3600, 1) AS hours,
@@ -216,7 +228,7 @@ ORDER BY total_seconds DESC
 LIMIT 50;
 ```
 
-### Последние заходы конкретного игрока
+### One player's recent sessions
 ```sql
 SELECT started_at, ended_at, duration_seconds, connect_map,
        kills, deaths, disconnect_reason_name
@@ -226,7 +238,7 @@ ORDER BY started_at DESC
 LIMIT 20;
 ```
 
-### Онлайн по часам суток (когда сервер живой)
+### Online by hour of day
 ```sql
 SELECT HOUR(taken_at) AS hour_utc,
        ROUND(AVG(players), 1) AS avg_players,
@@ -237,7 +249,7 @@ GROUP BY HOUR(taken_at)
 ORDER BY hour_utc;
 ```
 
-### Новые игроки за неделю и сколько из них вернулось (ретеншн)
+### Newcomers this week, and how many came back (retention)
 ```sql
 SELECT DATE(p.first_seen) AS joined,
        COUNT(*) AS newcomers,
@@ -248,7 +260,7 @@ GROUP BY DATE(p.first_seen)
 ORDER BY joined;
 ```
 
-### Популярность карт по наигранному времени
+### Map popularity by playtime
 ```sql
 SELECT connect_map,
        COUNT(*) AS sessions,
@@ -260,16 +272,16 @@ GROUP BY connect_map
 ORDER BY hours DESC;
 ```
 
-### Почему игроки уходят
+### Why players leave
 ```sql
-SELECT disconnect_reason_name, COUNT(*) AS times
+SELECT disconnect_reason, disconnect_reason_name, COUNT(*) AS times
 FROM ch_sessions
 WHERE ended_at IS NOT NULL AND started_at >= UTC_TIMESTAMP() - INTERVAL 7 DAY
-GROUP BY disconnect_reason_name
+GROUP BY disconnect_reason, disconnect_reason_name
 ORDER BY times DESC;
 ```
 
-### География аудитории
+### Audience by country
 ```sql
 SELECT country_iso, COUNT(DISTINCT steamid64) AS players,
        ROUND(SUM(duration_seconds) / 3600) AS hours
@@ -279,7 +291,7 @@ GROUP BY country_iso
 ORDER BY players DESC;
 ```
 
-### История смены ников
+### Nickname history
 ```sql
 SELECT nickname, first_seen, last_seen, times_seen
 FROM ch_nicknames
@@ -287,7 +299,7 @@ WHERE steamid64 = ?
 ORDER BY last_seen DESC;
 ```
 
-### Возможные мультиаккаунты (по хешу IP, без хранения самого адреса)
+### Possible multi-accounts (by IP hash, without storing the address)
 ```sql
 SELECT ip_hash, COUNT(DISTINCT steamid64) AS accounts,
        GROUP_CONCAT(DISTINCT steamid64) AS steam_ids
@@ -298,65 +310,66 @@ HAVING accounts > 1
 ORDER BY accounts DESC;
 ```
 
-### Карта падений сервера
+### Map of server crashes
 ```sql
 SELECT DATE(started_at) AS day, connect_map,
        COUNT(*) AS interrupted_sessions
 FROM ch_sessions
-WHERE end_kind = 5                      -- сервер умер во время сессии
+WHERE end_kind = 5                      -- the server died mid-session
 GROUP BY day, connect_map
 ORDER BY day DESC, interrupted_sessions DESC;
 ```
 
-### Качество связи по странам
+### Connection quality by country
 ```sql
 SELECT country_iso,
        ROUND(AVG(ping_avg)) AS avg_ping,
        COUNT(*) AS sessions
 FROM ch_sessions
-WHERE ping_samples > 0 AND started_at >= UTC_TIMESTAMP() - INTERVAL 30 DAY
+WHERE ping_samples IS NOT NULL AND ping_samples > 0
+  AND started_at >= UTC_TIMESTAMP() - INTERVAL 30 DAY
 GROUP BY country_iso
 HAVING sessions > 20
 ORDER BY avg_ping;
 ```
 
-### Серверы без публичного адреса
+### Servers without a public address
 ```sql
 SELECT id, hostname, last_seen
 FROM ch_servers
 WHERE address = '';
 ```
-Пусто в `address` — не сбой записи, а «плагин не смог определить адрес».
-Лечится настройкой `Server.PublicAddress` в `Settings.json` на этом сервере.
+An empty `address` is not a write failure — it means "the plugin could not determine
+the address". Fix it by setting `Server.PublicAddress` in that server's `Settings.json`.
 
-## Права для читающего пользователя
+## Grants
 
-Панели и отчётам запись не нужна:
+Panels and reports never need write access:
 
 ```sql
 CREATE USER 'ch_reader'@'%' IDENTIFIED BY '...';
 GRANT SELECT ON connect_history.* TO 'ch_reader'@'%';
 ```
 
-Самому плагину нужен отдельный пользователь и не больше, чем:
+The plugin itself needs its own user and no more than:
 
 ```sql
 GRANT SELECT, INSERT, UPDATE, CREATE, INDEX, ALTER ON connect_history.* TO 'ch_plugin'@'%';
 ```
 
-`DROP` и `DELETE` плагину не нужны никогда — он не удаляет данные.
+`DROP` and `DELETE` are never needed — the plugin does not delete data.
 
-## Чистка старых данных
+## Retention
 
-Плагин ничего не удаляет сам. Ретеншн — решение владельца сервера:
+The plugin deletes nothing on its own. Retention is the server owner's decision:
 
 ```sql
--- Убрать персональные данные, оставив аналитику
+-- Drop personal data, keep the analytics
 UPDATE ch_sessions
 SET player_ip = NULL, city = NULL
 WHERE started_at < UTC_TIMESTAMP() - INTERVAL 90 DAY AND player_ip IS NOT NULL;
 
--- Проредить снимки онлайна старше полугода до одного в час
+-- Thin out online snapshots older than six months down to one per hour
 DELETE FROM ch_online_snapshots
 WHERE taken_at < UTC_TIMESTAMP() - INTERVAL 180 DAY AND MINUTE(taken_at) <> 0;
 ```

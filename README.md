@@ -171,10 +171,10 @@ Six tables, all created by the plugin: `ch_sessions`, `ch_players`, `ch_nickname
 
 Full schema and a query cookbook: [docs/DATABASE.md](docs/DATABASE.md).
 
-A ready-made section for the Flute CMS panel —
-[ConnectHistory-Flute](https://github.com/Armatura-Create/ConnectHistory-Flute):
-online, statistics, filters and charts on top of these tables.
-How to wire it up — [docs/FLUTE_MODULE.md](docs/FLUTE_MODULE.md).
+A ready-made section for the Flute CMS panel:
+**[ConnectHistory-Flute](https://github.com/Armatura-Create/ConnectHistory-Flute)** —
+online list, statistics, filters and charts on top of these tables. Installation and
+wiring are documented in that repository.
 
 Give the plugin its own MySQL user — it never needs `DROP` or `DELETE`:
 

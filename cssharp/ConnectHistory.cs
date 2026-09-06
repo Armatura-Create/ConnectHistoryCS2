@@ -76,6 +76,8 @@ public sealed partial class ConnectHistory : BasePlugin
         _sessions = new SessionService();
 
         ReloadConfig();
+        ShowBanner();
+
         _geoIp = new GeoIpService(ModuleDirectory, _logger);
 
         BuildDatabaseStack();
@@ -173,6 +175,14 @@ public sealed partial class ConnectHistory : BasePlugin
                           "configs/plugins/ConnectHistory и выполните css_ch_reload", ex);
             return new Config();
         }
+    }
+
+    /// Заставка печатается ПОСЛЕ загрузки конфига: в ней номер сервера,
+    /// а он приходит оттуда.
+    private void ShowBanner()
+    {
+        foreach (var line in Banner.Build(ModuleVersion, "CounterStrikeSharp", Config.ServerId))
+            _logger.Raw(line);
     }
 
     private void StartTimers()

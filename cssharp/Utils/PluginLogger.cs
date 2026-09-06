@@ -26,6 +26,8 @@ public sealed class PluginLogger : ILogger
             Console.WriteLine($"[{Stamp()}] [ConnectHistory] [DEBUG] {message}");
     }
 
+    public void Raw(string message) => Console.WriteLine(message);
+
     public void Error(string message, Exception? ex = null)
     {
         // Текст исключения обязан быть очищен от секретов: MySqlConnector умеет

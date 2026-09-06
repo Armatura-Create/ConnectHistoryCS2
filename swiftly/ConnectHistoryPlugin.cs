@@ -74,6 +74,7 @@ public sealed partial class ConnectHistory : BasePlugin
         _sessions = new SessionService();
 
         ReloadConfig();
+        ShowBanner();
 
         // Базы GeoLite2 лежат рядом с DLL плагина, а спул неотправленных записей —
         // в data-каталоге: каталог плагина перезаписывается при обновлении,
@@ -170,6 +171,14 @@ public sealed partial class ConnectHistory : BasePlugin
                           "configs/plugins/ConnectHistory и выполните sw_ch_reload", ex);
             return new Config();
         }
+    }
+
+    /// Заставка печатается ПОСЛЕ загрузки конфига: в ней номер сервера,
+    /// а он приходит оттуда.
+    private void ShowBanner()
+    {
+        foreach (var line in Banner.Build(PluginVersion, "SwiftlyS2", Config.ServerId))
+            _logger.Raw(line);
     }
 
     private void StartTimers()
