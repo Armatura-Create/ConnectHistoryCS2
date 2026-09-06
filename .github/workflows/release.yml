@@ -87,7 +87,11 @@ jobs:
           ZIP="cssharp/bin/Release/net10.0/ConnectHistory_cssharp_${PLUGIN_VERSION}.zip"
           PLUGIN_DIR=addons/counterstrikesharp/plugins/ConnectHistory
           test -f "$ZIP" || { echo "::error::$ZIP не собран"; exit 1; }
-          unzip -l "$ZIP"
+
+          # Один снимок списка вместо конвейера на каждую проверку:
+          # "unzip -l | grep -q" под pipefail падает на успешном совпадении
+          # (grep -q выходит первым, unzip ловит SIGPIPE).
+          unzip -l "$ZIP" | tee listing.txt
 
           for required in \
             "$PLUGIN_DIR/ConnectHistory.dll" \
@@ -96,12 +100,12 @@ jobs:
             "$PLUGIN_DIR/GeoLite2-Country.mmdb" \
             "$PLUGIN_DIR/GeoLite2-City.mmdb"
           do
-            unzip -l "$ZIP" | grep -q -F "$required" \
+            grep -q -F "$required" listing.txt \
               || { echo "::error::в архиве нет $required"; exit 1; }
           done
 
           # Конфиг содержит пароль от базы и в релиз попадать не должен никогда
-          if unzip -l "$ZIP" | grep -q -F 'Settings.json'; then
+          if grep -q -F 'Settings.json' listing.txt; then
             echo "::error::в архиве оказался Settings.json — он содержит пароль"
             exit 1
           fi
@@ -174,7 +178,11 @@ jobs:
           ZIP="swiftly/bin/Release/net10.0/ConnectHistory_swiftly_${PLUGIN_VERSION}.zip"
           PLUGIN_DIR=addons/swiftlys2/plugins/ConnectHistory
           test -f "$ZIP" || { echo "::error::$ZIP не собран"; exit 1; }
-          unzip -l "$ZIP"
+
+          # Один снимок списка вместо конвейера на каждую проверку:
+          # "unzip -l | grep -q" под pipefail падает на успешном совпадении
+          # (grep -q выходит первым, unzip ловит SIGPIPE).
+          unzip -l "$ZIP" | tee listing.txt
 
           for required in \
             "$PLUGIN_DIR/ConnectHistory.dll" \
@@ -183,19 +191,19 @@ jobs:
             "$PLUGIN_DIR/GeoLite2-Country.mmdb" \
             "$PLUGIN_DIR/GeoLite2-City.mmdb"
           do
-            unzip -l "$ZIP" | grep -q -F "$required" \
+            grep -q -F "$required" listing.txt \
               || { echo "::error::в архиве нет $required"; exit 1; }
           done
 
           # Сборки самого SwiftlyS2 предоставляет хост. Своя копия рядом с плагином —
           # это второй ISwiftlyCore в процессе и падение на первом же приведении типов.
-          if unzip -l "$ZIP" | grep -q -F 'SwiftlyS2'; then
+          if grep -q -F 'SwiftlyS2' listing.txt; then
             echo "::error::в архиве оказались сборки SwiftlyS2 — их даёт хост"
             exit 1
           fi
 
           # Конфиг содержит пароль от базы и в релиз попадать не должен никогда
-          if unzip -l "$ZIP" | grep -q -F 'Settings.json'; then
+          if grep -q -F 'Settings.json' listing.txt; then
             echo "::error::в архиве оказался Settings.json — он содержит пароль"
             exit 1
           fi
@@ -395,16 +403,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          declare -A BINARY=(
-            [linux]="addons/ConnectHistory/bin/linuxsteamrt64/ConnectHistory.so"
-            [windows]="addons/ConnectHistory/bin/win64/ConnectHistory.dll"
-          )
-          declare -A FOREIGN=(
-            [linux]="addons/ConnectHistory/bin/win64"
-            [windows]="addons/ConnectHistory/bin/linuxsteamrt64"
-          )
-
+          # Без ассоциативных массивов сознательно: они есть только с bash 4,
+          # и скрипт, который нельзя прогнать на своей машине, проверяется
+          # исключительно в релизе - то есть тогда, когда чинить уже поздно.
           for slug in linux windows; do
+            case "$slug" in
+              linux)
+                binary="addons/ConnectHistory/bin/linuxsteamrt64/ConnectHistory.so"
+                foreign="addons/ConnectHistory/bin/win64" ;;
+              windows)
+                binary="addons/ConnectHistory/bin/win64/ConnectHistory.dll"
+                foreign="addons/ConnectHistory/bin/linuxsteamrt64" ;;
+            esac
+
             tree="trees/metamod-tree-$slug"
             test -d "$tree" || { echo "::error::нет дерева $tree"; exit 1; }
 
@@ -417,20 +428,26 @@ jobs:
             ZIP="$PWD/ConnectHistory_metamod_${slug}_${PLUGIN_VERSION}.zip"
             (cd "$tree" && zip -rq "$ZIP" .)
 
+            # Список файлов снимается ОДИН раз в файл, а не читается конвейером
+            # на каждую проверку. "unzip -l | grep -q" под pipefail падает на
+            # УСПЕШНОМ совпадении: grep -q выходит по первой строке, unzip
+            # получает SIGPIPE, и pipefail объявляет это ошибкой конвейера.
+            unzip -l "$ZIP" > listing.txt
+
             for required in \
-              "${BINARY[$slug]}" \
+              "$binary" \
               "addons/metamod/ConnectHistory.vdf" \
               "addons/ConnectHistory/configs/Settings.json" \
               "addons/ConnectHistory/configs/Messages.json" \
               "addons/ConnectHistory/GeoLite2-Country.mmdb" \
               "addons/ConnectHistory/GeoLite2-City.mmdb"
             do
-              unzip -l "$ZIP" | grep -q -F "$required" \
+              grep -q -F "$required" listing.txt \
                 || { echo "::error::в архиве $slug нет $required"; exit 1; }
             done
 
             # Чужая ОС в архиве — это половина веса, которая никогда не запустится
-            if unzip -l "$ZIP" | grep -q -F "${FOREIGN[$slug]}"; then
+            if grep -q -F "$foreign" listing.txt; then
               echo "::error::в архиве $slug оказались бинарники другой ОС"
               exit 1
             fi
