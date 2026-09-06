@@ -30,6 +30,7 @@ for sdk_target in MMSPlugin.sdk_targets:
     'src/core/sql_builder.cpp',
     'src/core/writer.cpp',
     'src/core/util/chat_format.cpp',
+    'src/core/util/fs.cpp',
     'src/core/util/ip.cpp',
     'src/core/util/sha256.cpp',
     'src/core/util/sql_sanitizer.cpp',

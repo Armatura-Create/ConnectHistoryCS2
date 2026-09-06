@@ -62,6 +62,16 @@ $(OUT)/%.o: %.c
 # закрывает сразу две дыры между локальной сборкой и игровой — исключения и стандарт.
 GAMEFLAGS ?= -std=c++20 -fno-exceptions -fsyntax-only
 
+# AMBuilder перечисляет исходники ядра руками, а тесты берут их маской. Забытый
+# в AMBuilder файл собирается локально и падает только в игровой сборке - то есть
+# через несколько минут CI и совсем не там, где ошиблись.
+sources-check:
+	@for f in $(CORE_SRC); do \
+		grep -q "'$$f'" AMBuilder || { \
+			echo "AMBuilder не собирает $$f"; exit 1; }; \
+	done
+	@echo "AMBuilder собирает все файлы ядра"
+
 noexcept-check:
 	@for f in $(CORE_SRC); do \
 		$(CXX) $(GAMEFLAGS) $(INCLUDES) $$f || exit 1; \
@@ -71,4 +81,4 @@ noexcept-check:
 clean:
 	rm -rf $(OUT)
 
-.PHONY: all clean noexcept-check dump-defaults
+.PHONY: all clean noexcept-check dump-defaults sources-check

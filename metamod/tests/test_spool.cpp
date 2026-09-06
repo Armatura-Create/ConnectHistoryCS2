@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <string>
+#include <vector>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -233,4 +234,26 @@ TEST_CASE("Счётчик попыток обнуляется при досыл�
     const std::vector<ch::WriteJob> jobs = spool.TakeAll();
     REQUIRE(jobs.size() == 1);
     CHECK(jobs[0].attempts == 0);
+}
+
+// --- Каталог спула создаётся сам ---
+//
+// Пустые каталоги не переживают упаковку в zip, поэтому на свежей установке
+// addons/ConnectHistory/data просто нет. Раньше ofstream молча не открывался,
+// и первая же недоступность базы теряла задание — ровно в тот момент, ради
+// которого спул и существует.
+
+TEST_CASE("Спул создаёт свой каталог вместе с родителями") {
+    TempDir dir;
+    ch::NullLogger logger;
+
+    const std::string path = dir.File("addons/ConnectHistory/data/pending-writes.jsonl");
+    ch::Spool spool(path, 100, &logger);
+
+    REQUIRE(spool.Append(FullCloseJob()));
+    CHECK(spool.Exists());
+
+    const std::vector<ch::WriteJob> back = spool.TakeAll();
+    REQUIRE(back.size() == 1);
+    CHECK(back[0].sessionKey == "0123456789abcdef0123456789abcdef");
 }

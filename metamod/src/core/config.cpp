@@ -1,6 +1,7 @@
 #include "core/config.h"
 
 #include "core/logger.h"
+#include "core/util/fs.h"
 
 #include <nlohmann/json.hpp>
 
@@ -43,46 +44,6 @@ bool WriteWholeFile(const std::string& path, const std::string& content) {
 bool FileExists(const std::string& path) {
     struct stat info;
     return stat(path.c_str(), &info) == 0;
-}
-
-bool DirectoryExists(const std::string& path) {
-    struct stat info;
-    return stat(path.c_str(), &info) == 0 && (info.st_mode & S_IFDIR) != 0;
-}
-
-bool MakeOneDirectory(const std::string& path) {
-#ifdef _WIN32
-    const int rc = _mkdir(path.c_str());
-#else
-    const int rc = mkdir(path.c_str(), 0755);
-#endif
-    return rc == 0 || errno == EEXIST;
-}
-
-// Каталог создаётся ВМЕСТЕ С РОДИТЕЛЯМИ.
-//
-// Одиночный mkdir полного пути падает с ENOENT, если addons/ConnectHistory ещё
-// нет, — а его нет всегда, когда бинарник плагина положили в другое место
-// (например, в addons/metamod/meta_plugins/). Раньше это молчало, и конфиги
-// просто не появлялись без единой строчки в консоли.
-bool EnsureDirectory(const std::string& path) {
-    if (path.empty() || DirectoryExists(path)) return true;
-
-    // Первый слэш абсолютного пути (и "C:" на Windows) пропускаем: создавать
-    // корень не нужно и нельзя.
-    size_t start = 0;
-    while (start < path.size() && (path[start] == '/' || path[start] == '\\')) ++start;
-
-    for (size_t i = start; i <= path.size(); ++i) {
-        const bool end = i == path.size();
-        if (!end && path[i] != '/' && path[i] != '\\') continue;
-
-        const std::string part = path.substr(0, i);
-        if (part.empty() || part.back() == ':') continue;
-        if (!DirectoryExists(part) && !MakeOneDirectory(part)) return false;
-    }
-
-    return DirectoryExists(path);
 }
 
 // Settings.json содержит пароль от базы: на shared-хостинге его не должен читать
@@ -301,7 +262,7 @@ Config ConfigService::LoadOrCreate(const std::string& configDirectory) {
     _failedFiles.clear();
     _directory = configDirectory;
 
-    const bool haveDirectory = EnsureDirectory(configDirectory);
+    const bool haveDirectory = fs::EnsureDirectory(configDirectory);
     if (!haveDirectory && _logger != nullptr) {
         // Молчать здесь нельзя: плагин продолжит работать на значениях по
         // умолчанию, то есть без базы, и админ будет искать причину в MySQL.

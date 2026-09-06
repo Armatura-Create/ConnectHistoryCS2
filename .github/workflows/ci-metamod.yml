@@ -65,6 +65,13 @@ jobs:
         working-directory: metamod
         run: make -f Makefile.tests noexcept-check
 
+      # AMBuilder lists the core sources by hand while the tests take them by
+      # wildcard. A file forgotten in AMBuilder builds fine locally and fails
+      # only in the game build - minutes later and nowhere near the mistake.
+      - name: AMBuilder builds every core source
+        working-directory: metamod
+        run: make -f Makefile.tests sources-check
+
   # Building the plugin itself. Linux builds inside the Steam Runtime 3 container:
   # that is the ABI a CS2 dedicated server uses, and a binary from a plain ubuntu
   # runner will not load.

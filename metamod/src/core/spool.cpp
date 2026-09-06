@@ -1,5 +1,7 @@
 #include "core/spool.h"
 
+#include "core/util/fs.h"
+
 #include "core/logger.h"
 
 #include <nlohmann/json.hpp>
@@ -288,10 +290,23 @@ bool Spool::Append(const WriteJob& job) {
         return false;
     }
 
+    // Каталог создаётся здесь, а не при старте: пустые каталоги не переживают
+    // упаковку в zip, поэтому на свежей установке addons/ConnectHistory/data
+    // просто нет. Без этого первая же недоступность базы теряла задание —
+    // ровно в тот момент, ради которого спул и существует.
+    const std::string directory = fs::ParentDirectory(_path);
+    if (!directory.empty() && !fs::EnsureDirectory(directory)) {
+        if (_logger != nullptr) {
+            _logger->Error("[DB] Не удалось создать каталог спула: " + directory);
+        }
+        return false;
+    }
+
     std::ofstream stream(_path.c_str(), std::ios::app | std::ios::binary);
     if (!stream.is_open()) {
         if (_logger != nullptr) {
-            _logger->Error("[DB] Не удалось записать задание в спул: " + job.Describe());
+            _logger->Error("[DB] Не удалось записать задание в спул (" + _path +
+                           "): " + job.Describe());
         }
         return false;
     }

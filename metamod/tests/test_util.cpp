@@ -8,7 +8,12 @@
 #include "core/util/steamid.h"
 #include "core/util/timeutil.h"
 
+#include "core/util/fs.h"
+
 #include "doctest.h"
+
+#include <cstdlib>
+#include <unistd.h>
 
 TEST_CASE("ExtractIp понимает IPv4 и IPv6") {
     CHECK(ch::ip::ExtractIp("1.2.3.4:27015") == "1.2.3.4");
@@ -213,4 +218,37 @@ TEST_CASE("Пояс отображения: UTC, Local и фиксированн
     // Пояс влияет только на показ, но показывать обязан верно
     CHECK(ch::FormatDisplayDateTime(1788611696, 3 * 3600) == "2026-09-05 15:34");
     CHECK(ch::FormatDisplayDateTime(1788611696, 0) == "2026-09-05 12:34");
+}
+
+// --- Файловые утилиты ---
+//
+// Живут отдельно потому, что на нерекурсивном mkdir плагин обжёгся дважды:
+// не создавались конфиги и не писался спул. Обе поломки выглядели как что-то
+// совершенно другое.
+
+TEST_CASE("EnsureDirectory создаёт всю цепочку каталогов") {
+    char pattern[] = "/tmp/ch_fs_testXXXXXX";
+    const char* made = mkdtemp(pattern);
+    REQUIRE(made != nullptr);
+    const std::string root(made);
+
+    const std::string deep = root + "/a/b/c/d";
+    CHECK(ch::fs::EnsureDirectory(deep));
+    CHECK(ch::fs::DirectoryExists(deep));
+
+    // Повторный вызов по существующему пути — не ошибка
+    CHECK(ch::fs::EnsureDirectory(deep));
+
+    const std::string command = "rm -rf '" + root + "'";
+    if (std::system(command.c_str()) != 0) { /* мусор в /tmp безвреден */ }
+}
+
+TEST_CASE("EnsureDirectory возвращает false там, где писать нельзя") {
+    CHECK_FALSE(ch::fs::EnsureDirectory("/proc/ch_should_not_exist/nested"));
+}
+
+TEST_CASE("ParentDirectory отрезает имя файла") {
+    CHECK(ch::fs::ParentDirectory("/a/b/c.txt") == "/a/b");
+    CHECK(ch::fs::ParentDirectory("c.txt").empty());
+    CHECK(ch::fs::ParentDirectory("/c.txt").empty());
 }
