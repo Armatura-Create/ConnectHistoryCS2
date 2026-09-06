@@ -225,3 +225,38 @@ TEST_CASE("Сообщения читаются в карту ключ -> язы�
     // Теги те же, что в C#-целях: Messages.json переносится между реализациями
     CHECK(config.messages.at("prefix").at("RU").find("{GREEN}") != std::string::npos);
 }
+
+// --- Каталог конфигурации создаётся вместе с родителями ---
+//
+// Ровно этот случай и сломался на живом сервере: бинарник положили не в
+// addons/ConnectHistory, каталога-родителя не было, одиночный mkdir падал
+// с ENOENT, и конфиги не появлялись без единой строчки в консоли.
+
+TEST_CASE("Недостающие родительские каталоги создаются") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    const std::string nested = dir.Path() + "/addons/ConnectHistory/configs";
+
+    service.LoadOrCreate(nested);
+
+    CHECK(Exists(nested + "/Settings.json"));
+    CHECK(Exists(nested + "/Messages.json"));
+    CHECK(Exists(nested + "/Settings.schema.json"));
+}
+
+TEST_CASE("Повторный запуск по существующему пути ничего не ломает") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    const std::string nested = dir.Path() + "/a/b/c";
+
+    service.LoadOrCreate(nested);
+    Write(nested + "/Settings.json", "{ \"DisplayTimeZone\": \"+05:00\" }");
+
+    // Второй проход обязан прочитать правку человека, а не перезаписать её
+    // дефолтами: каталог уже есть, и создавать заново там нечего.
+    CHECK(service.LoadOrCreate(nested).displayTimeZone == "+05:00");
+}

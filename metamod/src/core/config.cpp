@@ -45,12 +45,44 @@ bool FileExists(const std::string& path) {
     return stat(path.c_str(), &info) == 0;
 }
 
-void EnsureDirectory(const std::string& path) {
+bool DirectoryExists(const std::string& path) {
+    struct stat info;
+    return stat(path.c_str(), &info) == 0 && (info.st_mode & S_IFDIR) != 0;
+}
+
+bool MakeOneDirectory(const std::string& path) {
 #ifdef _WIN32
-    _mkdir(path.c_str());
+    const int rc = _mkdir(path.c_str());
 #else
-    mkdir(path.c_str(), 0755);
+    const int rc = mkdir(path.c_str(), 0755);
 #endif
+    return rc == 0 || errno == EEXIST;
+}
+
+// Каталог создаётся ВМЕСТЕ С РОДИТЕЛЯМИ.
+//
+// Одиночный mkdir полного пути падает с ENOENT, если addons/ConnectHistory ещё
+// нет, — а его нет всегда, когда бинарник плагина положили в другое место
+// (например, в addons/metamod/meta_plugins/). Раньше это молчало, и конфиги
+// просто не появлялись без единой строчки в консоли.
+bool EnsureDirectory(const std::string& path) {
+    if (path.empty() || DirectoryExists(path)) return true;
+
+    // Первый слэш абсолютного пути (и "C:" на Windows) пропускаем: создавать
+    // корень не нужно и нельзя.
+    size_t start = 0;
+    while (start < path.size() && (path[start] == '/' || path[start] == '\\')) ++start;
+
+    for (size_t i = start; i <= path.size(); ++i) {
+        const bool end = i == path.size();
+        if (!end && path[i] != '/' && path[i] != '\\') continue;
+
+        const std::string part = path.substr(0, i);
+        if (part.empty() || part.back() == ':') continue;
+        if (!DirectoryExists(part) && !MakeOneDirectory(part)) return false;
+    }
+
+    return DirectoryExists(path);
 }
 
 // Settings.json содержит пароль от базы: на shared-хостинге его не должен читать
@@ -209,7 +241,14 @@ Config ConfigService::LoadOrCreate(const std::string& configDirectory) {
     _failedFiles.clear();
     _directory = configDirectory;
 
-    EnsureDirectory(configDirectory);
+    const bool haveDirectory = EnsureDirectory(configDirectory);
+    if (!haveDirectory && _logger != nullptr) {
+        // Молчать здесь нельзя: плагин продолжит работать на значениях по
+        // умолчанию, то есть без базы, и админ будет искать причину в MySQL.
+        _logger->Error("[Config] не удалось создать каталог конфигурации: " + configDirectory);
+        _logger->Error("[Config] распакуйте configs/ из архива по этому пути "
+                       "или дайте серверу право писать туда");
+    }
 
     const std::string settingsPath = Join(configDirectory, "Settings.json");
     const std::string messagesPath = Join(configDirectory, "Messages.json");
@@ -217,22 +256,31 @@ Config ConfigService::LoadOrCreate(const std::string& configDirectory) {
     // Схемы и README перезаписываются ВСЕГДА: иначе после обновления плагина они
     // продолжают описывать старую версию и врут админу. Справочные файлы — не повод
     // сорвать загрузку конфига: каталог может быть только для чтения.
-    WriteWholeFile(Join(configDirectory, "Settings.schema.json"), SettingsSchemaJson());
-    WriteWholeFile(Join(configDirectory, "Messages.schema.json"), MessagesSchemaJson());
-    WriteWholeFile(Join(configDirectory, "README.txt"), ReadmeText());
+    if (haveDirectory) {
+        WriteWholeFile(Join(configDirectory, "Settings.schema.json"), SettingsSchemaJson());
+        WriteWholeFile(Join(configDirectory, "Messages.schema.json"), MessagesSchemaJson());
+        WriteWholeFile(Join(configDirectory, "README.txt"), ReadmeText());
+    }
 
     if (!FileExists(settingsPath)) {
         if (_logger != nullptr) {
             _logger->Info("═══════════════════════════════════════════════════════════════");
             _logger->Info("  ConnectHistory: первый запуск — создаю файлы конфигурации");
+            _logger->Info("  " + configDirectory);
             _logger->Info("═══════════════════════════════════════════════════════════════");
         }
-        WriteWholeFile(settingsPath, DefaultSettingsJson());
+        if (!WriteWholeFile(settingsPath, DefaultSettingsJson()) && _logger != nullptr) {
+            _logger->Error("[Config] не удалось записать " + settingsPath);
+            _logger->Error("[Config] плагин работает на значениях по умолчанию: "
+                           "база не настроена, в неё ничего не пишется");
+        }
     }
     ProtectSecrets(settingsPath);
 
     if (!FileExists(messagesPath)) {
-        WriteWholeFile(messagesPath, DefaultMessagesJson());
+        if (!WriteWholeFile(messagesPath, DefaultMessagesJson()) && _logger != nullptr) {
+            _logger->Error("[Config] не удалось записать " + messagesPath);
+        }
     }
 
     Config config;
