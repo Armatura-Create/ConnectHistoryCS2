@@ -173,21 +173,42 @@ not collect them.
 
 | Column | CounterStrikeSharp | SwiftlyS2 | Metamod (native) |
 |---|---|---|---|
-| `kills`, `deaths`, `assists`, `headshots`, `damage`, `mvp` | yes | yes | yes (from game events) |
-| `rounds_played`, `team_final`, `team_changes` | yes | yes | yes |
+| connection history: `started_at`, `ended_at`, `duration_seconds`, `end_kind`, `ip`, `country_iso`, maps, nicknames | yes | yes | yes |
+| `kills`, `deaths`, `assists`, `headshots`, `damage`, `mvp`, `rounds_played` | yes | yes | **always `0`** |
+| `team_final`, `team_changes` | yes | yes | **always `0`** |
+| `spectator_seconds` | yes | yes | **always `0`** |
 | `score` | yes | yes | **always `NULL`** |
 | `ping_avg`, `ping_min`, `ping_max`, `ping_samples` | yes | yes | **always `NULL`** |
-| everything else | yes | yes | yes |
+| `ch_online_snapshots.bots` | yes | yes | **always `0`** |
 
-**Why the native target has no score or ping.** Both live only in the player
-controller's fields, and reaching the controller requires a pointer to
-`CGameEntitySystem` obtained by an offset from `GameResourceServiceServer`. That is
-the single constant the plugin would have to hardcode, and it breaks exactly when
-Valve moves the structure — that is, on any game update. The price is wrong: kills,
-deaths, assists, damage, MVP and rounds all come from game events and cost nothing.
+**Why the native target fills in no match results.** Two different walls, both made
+of the same brick — an address that has to be guessed.
 
-When a report spans servers running different plugins, filter ping with
-`WHERE ping_samples IS NOT NULL` rather than `> 0`.
+*Score and ping* live only in the player controller's fields, and reaching the
+controller requires a pointer to `CGameEntitySystem` obtained by an offset from
+`GameResourceServiceServer`.
+
+*Kills, deaths, assists, damage, MVP, rounds and team changes* arrive as game events,
+but no factory in CS2 hands out `IGameEventManager2`. The only route to it is to
+locate the `CGameEventManager` vtable — by symbol name in `server.so`, by RTTI in
+`server.dll` — and hook that. Both are reads through an address nothing in CI can
+verify, and a wrong one takes the server down on load rather than failing a build.
+
+That price buys nothing the plugin exists for. Joins, leaves, durations, maps,
+countries, "who is online right now" and the crash map all come from Metamod hooks
+and engine interfaces obtained by factory, with no offset anywhere. The two C#
+targets run inside a host that already paid this cost, so they keep the extras.
+
+**Reading across mixed servers.** Filter ping with `WHERE ping_samples IS NOT NULL`
+rather than `> 0`. For match results, exclude native servers by `server_id` — a zero
+there means "not collected", and it is indistinguishable from a real zero. The
+`ch_servers.plugin_version` of a native server starts with the same version string,
+so join on `ch_servers` if you need to tell them apart in a report.
+
+Consequence for playtime: with no `player_team` events, a native-target session never
+enters spectator state, so `spectator_seconds` stays `0` and `total_seconds` counts
+the whole connection. That matches the `CountSpectatorTime = false` behaviour and errs
+toward the older, simpler meaning of playtime rather than losing time.
 
 ### Smaller differences that queries do not care about
 

@@ -35,8 +35,13 @@ entries short and grouped. Add the section **before** tagging.
   single tag.
 
 ### Known limitations of the Metamod target
-- `score` and `ping_*` are always `NULL`, and `ch_online_snapshots.bots` is always `0`.
-  Reaching those values needs a hardcoded engine offset that breaks on game updates.
+- **No match results.** `kills`, `deaths`, `assists`, `headshots`, `damage`, `mvp`,
+  `rounds_played`, `team_final`, `team_changes` and `spectator_seconds` are always `0`;
+  `score`, `ping_*` and `ch_online_snapshots.bots` are `NULL`/`0`. Connection history
+  itself — joins, leaves, duration, map, country, "who is online now" — is complete.
+  Reaching those values needs an engine address guessed at runtime (a `CGameEventManager`
+  vtable lookup, or a `CGameEntitySystem` offset), which nothing in CI can verify and
+  which takes the server down on load when it is wrong.
 - `ch_playtime` and `ch_lastseen` are server-console commands taking a SteamID64, not
   in-game player commands.
 - See [Differences between targets](docs/DATABASE.md#differences-between-targets).

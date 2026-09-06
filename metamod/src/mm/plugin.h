@@ -3,17 +3,23 @@
 // Здесь и только здесь живут обращения к движку. Всё остальное — в src/core,
 // которое про SDK ничего не знает и потому проверяется тестами на любой машине.
 //
-// Осознанное ограничение: НИКАКИХ сигнатур, смещений и детуров. Всё нужное
-// доступно через хуки Metamod, игровые события и интерфейсы движка. Цена —
-// колонки score и ping_* остаются NULL (см. «расхождения между целями»
-// в docs/DATABASE.md), выгода — плагин не ломается на очередном обновлении игры.
+// Осознанное ограничение: НИКАКИХ сигнатур, смещений и резолва vtable по RTTI.
+// Всё нужное доступно через хуки Metamod и интерфейсы движка, полученные
+// фабрикой. Цена — итоги матча в этой цели не заполняются (см. «расхождения
+// между целями» в docs/DATABASE.md), выгода — плагин не ломается на очередном
+// обновлении игры.
 //
-// Почему именно эти две. Счёт и пинг живут только в полях контроллера, а чтобы
-// добраться до контроллера, нужен указатель на CGameEntitySystem, добываемый
-// смещением от GameResourceServiceServer. Это единственная константа, которую
-// пришлось бы захардкодить, и ломается она ровно тогда, когда Valve двигает
-// структуру, — то есть в любое обновление. Убийства, смерти, помощь, урон,
-// MVP и раунды берутся из игровых событий и такой цены не требуют.
+// Почему цена именно такая. Счёт и пинг живут в полях контроллера, а до
+// контроллера нужен указатель на CGameEntitySystem, добываемый смещением от
+// GameResourceServiceServer. Убийства, смерти, помощь, урон, MVP, раунды и
+// смена команды приходят игровыми событиями, но IGameEventManager2 в CS2
+// не отдаётся ни одной фабрикой: единственный путь к нему — найти vtable
+// класса CGameEventManager по имени в символах server.so или по RTTI
+// в server.dll. И то, и другое — чтение чужой памяти по угаданному адресу,
+// которое нечем проверить в CI и которое роняет сервер, если ошиблось.
+// История подключений — то, ради чего плагин существует, — от этого
+// не зависит: вход, выход, время, карта, страна и «кто сейчас онлайн»
+// берутся из хуков и работают без единого смещения.
 #pragma once
 
 #include "core/config.h"
@@ -25,7 +31,6 @@
 
 #include <cstdint>
 #include <ISmmPlugin.h>
-#include <igameevents.h>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -65,14 +70,6 @@ public:
     void Hook_ClientDisconnect(CPlayerSlot slot, ENetworkDisconnectionReason reason,
                                const char* name, uint64_t xuid, const char* networkId);
     void Hook_GameFrame(bool simulating, bool firstTick, bool lastTick);
-    int Hook_LoadEventsFromFile(const char* fileName, bool searchAll);
-
-    // Игровые события (см. events.cpp)
-    void OnRoundEnd();
-    void OnPlayerTeam(uint64_t steamId, int team);
-    void OnPlayerDeath(uint64_t attacker, uint64_t victim, uint64_t assister, bool headshot);
-    void OnPlayerHurt(uint64_t attacker, int damageHealth);
-    void OnRoundMvp(uint64_t steamId);
 
     // Команды (см. commands.cpp)
     void CommandStatus();
@@ -83,8 +80,6 @@ public:
     const Config& GetConfig() const { return _config; }
 
 private:
-    void RegisterEventListeners();
-    void UnregisterEventListeners();
     void RegisterPluginCommands();
     void UnregisterPluginCommands();
 
@@ -106,7 +101,7 @@ private:
     // Что известно про слот между OnClientConnected и ClientPutInServer.
     // Ключуется по слоту сознательно и живёт ровно до открытия сессии: сама
     // сессия хранится по SteamID, потому что слот движок переиспользует.
-    struct PendingClient {
+    struct ClientSlot {
         uint64_t steamId = 0;
         std::string ip;
         bool fake = false;
@@ -120,7 +115,7 @@ private:
     std::unique_ptr<GeoIpService> _geoIp;
 
     SessionRegistry _sessions;
-    std::unordered_map<int, PendingClient> _pending;
+    std::unordered_map<int, ClientSlot> _slots;
     std::unordered_map<uint64_t, int64_t> _commandCooldown;
 
     std::string _configDirectory;

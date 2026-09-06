@@ -40,7 +40,6 @@ for sdk_target in MMSPlugin.sdk_targets:
 
     # Metamod layer: the only place that talks to the engine
     'src/mm/plugin.cpp',
-    'src/mm/events.cpp',
     'src/mm/commands.cpp',
 
     # libmaxminddb as a single wrapper file, which also adds opening the database
@@ -48,6 +47,36 @@ for sdk_target in MMSPlugin.sdk_targets:
     'src/core/geoip_maxminddb.c',
     'vendor/libmaxminddb/src/data-pool.c',
   ]
+
+  # eiface.h - which ISmmPlugin.h pulls in - includes network_connection.pb.h,
+  # and the Source 2 SDK ships those only as .proto files. protoc has to run before
+  # anything in src/mm can compile. The list mirrors CS2Fixes: pruning it looks
+  # tempting, but the generated headers include each other, and a missing one
+  # surfaces as a confusing "file not found" three levels deep.
+  protoc_builder = builder.tools.Protoc(protoc = sdk_target.protoc, sources = [
+    os.path.join(sdk['path'], 'common', 'valveextensions.proto'),
+    os.path.join(sdk['path'], 'common', 'network_connection.proto'),
+    os.path.join(sdk['path'], 'common', 'source2_steam_stats.proto'),
+    os.path.join(sdk['path'], 'common', 'netmessages.proto'),
+    os.path.join(sdk['path'], 'common', 'networkbasetypes.proto'),
+    os.path.join(sdk['path'], 'common', 'engine_gcmessages.proto'),
+    os.path.join(sdk['path'], 'gcsdk', 'steammessages.proto'),
+    os.path.join(sdk['path'], 'gcsdk', 'gcsdk_gcmessages.proto'),
+    os.path.join(sdk['path'], 'game', 'shared', 'gameevents.proto'),
+    os.path.join(sdk['path'], 'game', 'shared', 'te.proto'),
+    os.path.join(sdk['path'], 'game', 'shared', 'usercmd.proto'),
+    os.path.join(sdk['path'], 'game', 'shared', 'usermessages.proto'),
+    os.path.join(sdk['path'], 'game', 'shared', 'cs', 'cs_gameevents.proto'),
+    os.path.join(sdk['path'], 'game', 'shared', 'cs', 'cs_usercmd.proto'),
+    os.path.join(sdk['path'], 'game', 'shared', 'cstrike15', 'cstrike15_gcmessages.proto'),
+    os.path.join(sdk['path'], 'game', 'shared', 'cstrike15', 'cstrike15_usermessages.proto'),
+    os.path.join(sdk['path'], 'networksystem', 'networksystem_protomessages.proto'),
+  ])
+  protoc_builder.protoc.includes += [
+    os.path.join(sdk['path'], 'gcsdk'),
+  ]
+
+  binary.custom = [protoc_builder]
 
   nodes = builder.Add(binary)
   MMSPlugin.binaries += [nodes]

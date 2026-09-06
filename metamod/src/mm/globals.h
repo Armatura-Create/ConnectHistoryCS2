@@ -8,19 +8,15 @@
 class IVEngineServer2;
 class ICvar;
 class ISource2Server;
-class IServerGameClients;
-class IGameEventManager2;
+// Именно ISource2GameClients: IServerGameClients в eiface.h — typedef, и
+// форвард-объявление его классом ломает сборку раньше первой полезной ошибки.
+class ISource2GameClients;
 
 namespace ch {
 
 extern IVEngineServer2* g_engine;
 extern ICvar* g_cvar;
 extern ISource2Server* g_server;
-extern IServerGameClients* g_gameClients;
-
-// Забирается хуком IGameEventManager2::LoadEventsFromFile: прямого способа
-// получить менеджер событий в CS2 нет, а сигнатуры и смещения мы принципиально
-// не используем.
-extern IGameEventManager2* g_gameEventManager;
+extern ISource2GameClients* g_gameClients;
 
 }  // namespace ch

@@ -13,7 +13,6 @@
 
 #include <eiface.h>
 #include <icvar.h>
-#include <igameevents.h>
 #include <iserver.h>
 
 #include <algorithm>
@@ -31,7 +30,6 @@ SH_DECL_HOOK5_void(IServerGameClients, ClientDisconnect, SH_NOATTRIB, 0, CPlayer
                    ENetworkDisconnectionReason, const char*, uint64, const char*);
 SH_DECL_HOOK6_void(IServerGameClients, OnClientConnected, SH_NOATTRIB, 0, CPlayerSlot,
                    const char*, uint64, const char*, const char*, bool);
-SH_DECL_HOOK2(IGameEventManager2, LoadEventsFromFile, SH_NOATTRIB, 0, int, const char*, bool);
 
 namespace ch {
 
@@ -39,7 +37,6 @@ IVEngineServer2* g_engine = nullptr;
 ICvar* g_cvar = nullptr;
 ISource2Server* g_server = nullptr;
 IServerGameClients* g_gameClients = nullptr;
-IGameEventManager2* g_gameEventManager = nullptr;
 
 ConnectHistoryPlugin g_plugin;
 
@@ -159,11 +156,6 @@ bool ConnectHistoryPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t 
     SH_ADD_HOOK(IServerGameClients, ClientDisconnect, g_gameClients,
                 SH_MEMBER(this, &ConnectHistoryPlugin::Hook_ClientDisconnect), true);
 
-    // Прямого способа получить менеджер игровых событий в CS2 нет. Хук на
-    // LoadEventsFromFile отдаёт его через META_IFACEPTR — без единой сигнатуры.
-    SH_ADD_HOOK(IGameEventManager2, LoadEventsFromFile, nullptr,
-                SH_MEMBER(this, &ConnectHistoryPlugin::Hook_LoadEventsFromFile), false);
-
     RegisterPluginCommands();
 
     // Регистрацию сервера откладываем: на этом этапе движок ещё не обязан
@@ -202,10 +194,6 @@ bool ConnectHistoryPlugin::Unload(char* error, size_t maxlen) {
                    SH_MEMBER(this, &ConnectHistoryPlugin::Hook_ClientPutInServer), true);
     SH_REMOVE_HOOK(IServerGameClients, ClientDisconnect, g_gameClients,
                    SH_MEMBER(this, &ConnectHistoryPlugin::Hook_ClientDisconnect), true);
-    SH_REMOVE_HOOK(IGameEventManager2, LoadEventsFromFile, nullptr,
-                   SH_MEMBER(this, &ConnectHistoryPlugin::Hook_LoadEventsFromFile), false);
-
-    UnregisterEventListeners();
 
     // Открытые сессии закрываем явно: иначе выгрузка плагина оставляет их
     // висеть в базе, и «кто сейчас онлайн» врёт до следующего старта.
@@ -267,18 +255,6 @@ void ConnectHistoryPlugin::OnLevelInit(const char* mapName, const char* mapEntit
 
 void ConnectHistoryPlugin::OnLevelShutdown() {}
 
-int ConnectHistoryPlugin::Hook_LoadEventsFromFile(const char* fileName, bool searchAll) {
-    (void)fileName;
-    (void)searchAll;
-
-    if (g_gameEventManager == nullptr) {
-        g_gameEventManager = META_IFACEPTR(IGameEventManager2);
-        RegisterEventListeners();
-    }
-
-    RETURN_META_VALUE(MRES_IGNORED, 0);
-}
-
 void ConnectHistoryPlugin::Hook_OnClientConnected(CPlayerSlot slot, const char* name,
                                                   uint64 xuid, const char* networkId,
                                                   const char* address, bool fake) {
@@ -287,12 +263,12 @@ void ConnectHistoryPlugin::Hook_OnClientConnected(CPlayerSlot slot, const char* 
 
     // Единственное место, где движок отдаёт IP игрока. Запоминаем до
     // ClientPutInServer — сессию открываем там, когда игрок реально в игре.
-    PendingClient pending;
-    pending.steamId = xuid;
-    pending.ip = address != nullptr ? ip::ExtractIp(address) : std::string();
-    pending.fake = fake;
+    ClientSlot entry;
+    entry.steamId = xuid;
+    entry.ip = address != nullptr ? ip::ExtractIp(address) : std::string();
+    entry.fake = fake;
 
-    _pending[slot.Get()] = pending;
+    _slots[slot.Get()] = entry;
 
     RETURN_META(MRES_IGNORED);
 }
@@ -312,7 +288,7 @@ void ConnectHistoryPlugin::Hook_ClientDisconnect(CPlayerSlot slot,
     (void)name;
     (void)networkId;
 
-    _pending.erase(slot.Get());
+    _slots.erase(slot.Get());
 
     OpenSession session;
     if (_sessions.Take(xuid, &session)) {
@@ -353,11 +329,11 @@ void ConnectHistoryPlugin::Hook_GameFrame(bool simulating, bool firstTick, bool 
 void ConnectHistoryPlugin::OpenSessionFor(int slot, uint64_t steamId, const char* name) {
     if (!IsRealSteamId(steamId)) return;
 
-    const auto pending = _pending.find(slot);
-    const bool fake = pending != _pending.end() && pending->second.fake;
+    const auto known = _slots.find(slot);
+    const bool fake = known != _slots.end() && known->second.fake;
     if (fake) return;
 
-    const std::string ip = pending != _pending.end() ? pending->second.ip : std::string();
+    const std::string ip = known != _slots.end() ? known->second.ip : std::string();
     const std::string nickname = TruncateUtf8(name, 128);
 
     // Повторный вход без смены карты (реконнект) не должен плодить открытые
@@ -534,8 +510,9 @@ std::string ConnectHistoryPlugin::CurrentMap() const {
     if (g_engine == nullptr) return std::string();
 
     const CGlobalVars* globals = g_engine->GetServerGlobals();
-    if (globals == nullptr || globals->mapname.IsEmpty()) return std::string();
+    if (globals == nullptr) return std::string();
 
+    // ToCStr() у string_t сам отдаёт "" вместо nullptr, проверять отдельно нечего
     return std::string(globals->mapname.ToCStr());
 }
 
@@ -545,9 +522,9 @@ std::string ConnectHistoryPlugin::ReadConVar(const char* name) const {
     ConVarRefAbstract convar(name);
     if (!convar.IsValidRef()) return std::string();
 
-    char buffer[256] = {0};
-    convar.GetStringValue(buffer, sizeof(buffer));
-    return std::string(buffer);
+    const CUtlString value = convar.GetString();
+    const char* text = value.Get();
+    return text != nullptr ? std::string(text) : std::string();
 }
 
 int ConnectHistoryPlugin::CountHumans() const {

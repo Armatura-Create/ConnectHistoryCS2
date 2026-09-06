@@ -21,13 +21,19 @@ def additionalLibs(context, binary, sdk):
   # whether libmariadb is installed system-wide, nor on which version it is.
   # A separate CI step builds it into build-deps/ (see ci-metamod.yml).
   root = os.path.join(builder.sourcePath, 'build-deps', 'lib')
+
+  # The generated .pb.cc files and the SDK headers reference protobuf, so its
+  # static library ships with the SDK and has to be linked here.
   if binary.compiler.target.platform == 'windows':
     return [
       os.path.join(root, 'mariadbclient.lib'),
+      os.path.join(sdk['path'], 'lib', 'public', 'win64', '2015', 'libprotobuf.lib'),
+      os.path.join(sdk['path'], 'lib', 'public', 'win64', 'steam_api64.lib'),
       'ws2_32.lib', 'crypt32.lib', 'secur32.lib', 'shlwapi.lib',
     ]
   return [
     os.path.join(root, 'libmariadbclient.a'),
+    os.path.join(sdk['path'], 'lib', 'linux64', 'release', 'libprotobuf.a'),
     '-lssl', '-lcrypto', '-lz', '-lpthread', '-ldl',
   ]
 
@@ -398,6 +404,10 @@ const char *PLUGIN_FULL_VERSION   = \"{version}\";
         '/W3',
         '/Zi',
         '/std:c++20',
+        # Sources are UTF-8 without BOM; without this MSVC decodes them as the
+        # system ANSI codepage and every non-ASCII literal reaches the console
+        # as mojibake.
+        '/utf-8',
       ]
       cxx.cxxflags += ['/TP']
       

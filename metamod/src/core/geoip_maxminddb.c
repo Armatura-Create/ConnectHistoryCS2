@@ -20,6 +20,16 @@
  * последовательность инициализации из MMDB_open. Если апстрим её изменит,
  * компилятор промолчит. Сверять при каждом подъёме версии сабмодуля.
  */
+/* maxminddb.c sets this before it includes anything, and glibc latches its
+ * feature-test macros on the FIRST system header it sees. We include our own
+ * header before maxminddb.c, so the macro has to be set here - otherwise
+ * <netdb.h> arrives without struct addrinfo and <limits.h> without SSIZE_MAX,
+ * and the vendored file fails to compile. Apple libc and the SteamRT clang do
+ * not gate on this, which is why it only showed up on gcc/glibc. */
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "core/geoip_memory.h"
 
 /* MMDB_lib_version() отдаёт эту строку. Обычно её подставляет autotools/CMake;

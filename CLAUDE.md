@@ -67,12 +67,20 @@ deliberate exception — it is the Russian translation of the user-facing README
 ## Target `metamod/` — native C++
 
 - C++17. The core in `src/core` **knows nothing about hl2sdk or MySQL**.
-- **No signatures, no offsets, no detours.** Everything needed comes from Metamod hooks,
-  game events and engine interfaces. The price is that `score` and `ping_*` stay `NULL`
-  (see `docs/DATABASE.md`); the payoff is a plugin that does not break on a game update.
-- Match results accumulate from game events (`player_death`, `player_hurt`, `round_mvp`,
-  `round_end`) instead of being read off the controller: reaching the controller needs a
-  `CGameEntitySystem` pointer obtained by a hardcoded offset.
+- **No signatures, no offsets, no vtable lookups.** Everything needed comes from Metamod
+  hooks and engine interfaces obtained by factory. The payoff is a plugin that does not
+  break on a game update; the price is that this target collects **no match results at
+  all** — see `docs/DATABASE.md`.
+- **There are no game events in this target, and adding them is not a small change.**
+  No factory in CS2 hands out `IGameEventManager2`; the only route is to find the
+  `CGameEventManager` vtable by symbol name in `server.so` or by RTTI in `server.dll`
+  (this is what CS2Fixes does) and hook that. Nothing in CI can verify such an address,
+  and a wrong one kills the server on load rather than failing a build. So `kills`,
+  `deaths`, `assists`, `damage`, `mvp`, `rounds_played`, `team_*` and `spectator_seconds`
+  stay `0`, and `score` / `ping_*` stay `NULL` (those two would additionally need a
+  `CGameEntitySystem` pointer obtained by offset). If you ever add the vtable lookup,
+  it changes what this target promises — update this section, `docs/DATABASE.md` and
+  the header comment of `src/mm/plugin.h` together.
 - **`.mmdb` is opened from memory only** (`ch_mmdb_open_memory`): `libmaxminddb` offers
   nothing but `mmap`, and a page fault inside a game process is a SIGBUS that kills the
   server with no stack. The wrapper `#include`s `maxminddb.c` whole so the submodule stays
@@ -198,7 +206,7 @@ The split runs along exactly one line: **does this code know about the engine?**
 |---|---|---|
 | `src/core/` | config, SQL text, sessions, writer, spool, GeoIP, reads, banner | locally, `make -f Makefile.tests` |
 | `src/db/` | MariaDB client | CI only |
-| `src/mm/` | `ISmmPlugin`, hooks, game events, commands | CI only |
+| `src/mm/` | `ISmmPlugin`, Metamod hooks, console commands | CI only |
 | `tests/` | doctest over `src/core` | locally |
 
 This is not aesthetics: hl2sdk does not build on macOS at all, and almost all of the
