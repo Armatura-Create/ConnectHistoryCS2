@@ -1,22 +1,25 @@
 # vim: set sts=2 ts=8 sw=2 tw=99 et ft=python:
 #
-# Сборочная обвязка AMBuild взята из CS2Fixes (https://github.com/Source2ZE/CS2Fixes),
-# GPL-3.0, и адаптирована под ConnectHistory. Своя версия этого файла означала бы
-# повторять три сотни строк логики определения hl2sdk и Metamod по памяти —
-# и разъезжаться с ней при каждом обновлении SDK. Лицензии совпадают
-# (GPL-3.0-or-later), авторство сохранено.
+# The AMBuild harness comes from CS2Fixes (https://github.com/Source2ZE/CS2Fixes),
+# GPL-3.0, adapted for ConnectHistory. Writing our own would mean reproducing three
+# hundred lines of hl2sdk and Metamod detection from memory, and drifting from it on
+# every SDK update. The licences match (GPL-3.0-or-later); authorship is preserved.
 #
-# Изменено: метаданные плагина, additionalIncludes/additionalDefines/additionalLibs
-# под вендоры (libmaxminddb, nlohmann/json, mariadb-connector-c).
+# Changed: plugin metadata and additionalIncludes/additionalDefines/additionalLibs
+# for the vendored libraries (libmaxminddb, nlohmann/json, mariadb-connector-c).
+#
+# KEEP THIS FILE ASCII-ONLY. AMBuild reads build scripts with the locale default
+# encoding, which is cp1252 on the Windows runner: a single non-ASCII byte fails
+# configure with UnicodeDecodeError.
 import os, json, re, subprocess
 from ambuild2.frontend.v2_2.cpp.builders import TargetSuffix
 
 # Edit the functions below for the extra functionality, the return should be
 # a list of path's to wanted locations
 def additionalLibs(context, binary, sdk):
-  # Клиент MariaDB линкуется СТАТИЧЕСКИ: игровой сервер не должен зависеть
-  # от того, установлен ли libmariadb в системе и какой он версии.
-  # Библиотеку собирает отдельный шаг CI в build-deps/ (см. ci-metamod.yml).
+  # The MariaDB client is linked STATICALLY: a game server must not depend on
+  # whether libmariadb is installed system-wide, nor on which version it is.
+  # A separate CI step builds it into build-deps/ (see ci-metamod.yml).
   root = os.path.join(builder.sourcePath, 'build-deps', 'lib')
   if binary.compiler.target.platform == 'windows':
     return [
@@ -31,8 +34,8 @@ def additionalLibs(context, binary, sdk):
 def additionalDefines(context, binary, sdk):
   return [
     'AMBUILD=1',
-    # nlohmann/json бросает исключения; в игровом процессе мы их ловим сами
-    # и наружу не выпускаем — см. ConfigService и Spool.
+    # nlohmann/json throws; inside a game process we catch everything ourselves
+    # and let nothing escape - see ConfigService and Spool.
     'JSON_USE_IMPLICIT_CONVERSIONS=0',
   ]
 

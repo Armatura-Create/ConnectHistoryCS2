@@ -1,9 +1,12 @@
 # vim: set sts=2 ts=8 sw=2 tw=99 et ft=python:
 #
-# Раскладка релиза: бинарь, .vdf для Metamod и базы GeoLite2 рядом с плагином.
+# Release layout: the binary, the Metamod .vdf and the GeoLite2 databases next
+# to the plugin.
 #
-# Конфиги В АРХИВ НЕ КЛАДЁМ: Settings.json содержит пароль от базы и создаётся
-# плагином при первом запуске с правами 600.
+# Configs are NOT shipped: Settings.json holds the database password and is created
+# by the plugin on first run with mode 600.
+#
+# KEEP THIS FILE ASCII-ONLY (see the note in AMBuildScript).
 import os
 
 builder.SetBuildFolder('package')
@@ -81,13 +84,13 @@ for task in MMSPlugin.binaries:
   if task.debug and cxx.target.platform == 'windows':
     package.addBinary(task.debug)
 
-  # Каталоги, которые плагин заполнит сам при первом запуске
+  # Directories the plugin fills in on first run
   builder.AddFolder(os.path.join(package.plugin_folder_path, 'configs'))
   builder.AddFolder(os.path.join(package.plugin_folder_path, 'data'))
 
-  # Базы GeoLite2: одна копия на весь репозиторий, три цели её кладут к себе.
-  # Архив без них выглядит рабочим до первого игрока, у которого
-  # не определилась страна, — поэтому проверка их наличия стоит и в CI.
+  # GeoLite2 databases: one copy per repository, all three targets ship it.
+  # An archive without them looks fine until the first player whose country
+  # cannot be resolved - which is why CI checks that they are present.
   for database in ['GeoLite2-Country.mmdb', 'GeoLite2-City.mmdb']:
     source = os.path.join(builder.sourcePath, '..', 'GeoIP', database)
     if os.path.exists(source):

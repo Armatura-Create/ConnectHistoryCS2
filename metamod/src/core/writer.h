@@ -13,6 +13,7 @@
 #include "core/jobs.h"
 #include "core/spool.h"
 
+#include <cstdint>
 #include <atomic>
 #include <condition_variable>
 #include <deque>

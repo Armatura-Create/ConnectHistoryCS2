@@ -1,10 +1,12 @@
 # vim: set sts=2 ts=8 sw=2 tw=99 et ft=python:
 #
-# Список исходников плагина.
+# Plugin sources.
 #
-# Обрати внимание на разделение: src/core собирается и здесь, и локальным
-# Makefile.tests — это одно и то же ядро, просто во втором случае без SDK
-# и без MySQL. Всё, что знает про движок, лежит в src/mm и в тесты не попадает.
+# Note the split: src/core is built both here and by the local Makefile.tests -
+# the same core, just without the SDK and without MySQL in the second case.
+# Everything that knows about the engine lives in src/mm and never reaches the tests.
+#
+# KEEP THIS FILE ASCII-ONLY (see the note in AMBuildScript).
 import os
 
 for sdk_target in MMSPlugin.sdk_targets:
@@ -14,7 +16,7 @@ for sdk_target in MMSPlugin.sdk_targets:
   binary = MMSPlugin.HL2Library(builder, cxx, f'{MMSPlugin.metadata["name"]}.{sdk["name"]}', sdk)
 
   binary.sources += [
-    # Ядро: движка не знает, проверяется тестами на любой машине
+    # Core: knows no engine, covered by tests on any machine
     'src/core/banner.cpp',
     'src/core/config.cpp',
     'src/core/config_defaults.cpp',
@@ -33,16 +35,16 @@ for sdk_target in MMSPlugin.sdk_targets:
     'src/core/util/sql_sanitizer.cpp',
     'src/core/util/timeutil.cpp',
 
-    # Клиент MySQL
+    # MySQL client
     'src/db/mariadb.cpp',
 
-    # Слой Metamod: единственное место, где есть обращения к движку
+    # Metamod layer: the only place that talks to the engine
     'src/mm/plugin.cpp',
     'src/mm/events.cpp',
     'src/mm/commands.cpp',
 
-    # libmaxminddb одним файлом-обёрткой: она же добавляет открытие базы
-    # из памяти вместо mmap, иначе страничный отказ убивает сервер SIGBUS'ом
+    # libmaxminddb as a single wrapper file, which also adds opening the database
+    # from memory instead of mmap - a page fault would kill the server with SIGBUS
     'src/core/geoip_maxminddb.c',
     'vendor/libmaxminddb/src/data-pool.c',
   ]

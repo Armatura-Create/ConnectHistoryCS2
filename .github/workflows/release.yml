@@ -277,12 +277,15 @@ jobs:
           path: mmsource-2.0
           submodules: recursive
 
+      # AMBuild ships inside the SteamRT3 image; only the Windows runner needs it.
       - uses: actions/checkout@v4
+        if: matrix.os == 'windows-latest'
         with:
           repository: alliedmodders/ambuild
           path: ambuild
 
       - name: Install AMBuild
+        if: matrix.os == 'windows-latest'
         shell: bash
         run: |
           python -m pip install --upgrade pip setuptools

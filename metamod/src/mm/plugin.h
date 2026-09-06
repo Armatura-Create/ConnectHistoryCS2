@@ -23,6 +23,7 @@
 #include "core/writer.h"
 #include "db/mariadb.h"
 
+#include <cstdint>
 #include <ISmmPlugin.h>
 #include <igameevents.h>
 #include <memory>

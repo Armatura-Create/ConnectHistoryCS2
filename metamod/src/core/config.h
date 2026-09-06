@@ -2,6 +2,7 @@
 // и Messages.json переносятся между реализациями без правок.
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>

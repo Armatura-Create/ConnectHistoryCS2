@@ -45,6 +45,10 @@ public class ChatColorTests
     /// Коды цветов — это байты движка CS2, а не изобретение фреймворка.
     /// Если таблица в ChatFormat разъедется с таблицей SwiftlyS2, один и тот же
     /// Messages.json начнёт выглядеть по-разному под разными целями.
+    ///
+    /// Тест долго был написан вслепую: на arm64 сборка SwiftlyS2 не грузится,
+    /// и он пропускался. Первый же прогон в CI показал, что сравнивать надо
+    /// именно код цвета — Colored() добавляет к нему ведущий пробел.
     [SkippableTheory]
     [InlineData("{DEFAULT}", "[default]")]
     [InlineData("{GREEN}", "[green]")]
@@ -64,6 +68,16 @@ public class ChatColorTests
     private static class Bound
     {
         public static void SameCode(string ourTag, string swiftlyTag)
-            => Assert.Equal(swiftlyTag.Colored(), ChatFormat.Render(ourTag));
+        {
+            // Colored() дописывает ПРОБЕЛ в начало, если строка начинается с '['.
+            // Это тот же трюк движка, ради которого существует
+            // EnsureChatColorPrefix: цвет в самом начале сообщения съедается.
+            // Снимаем ровно этот один пробел, чтобы сравнение было про код цвета
+            // и ни про что больше.
+            var swiftlyCode = swiftlyTag.Colored();
+            if (swiftlyCode.StartsWith(' ')) swiftlyCode = swiftlyCode[1..];
+
+            Assert.Equal(swiftlyCode, ChatFormat.Render(ourTag));
+        }
     }
 }

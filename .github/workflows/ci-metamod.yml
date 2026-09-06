@@ -1,7 +1,7 @@
 name: CI (Metamod:Source)
 
-# Фильтр по путям: сборка C++ с hl2sdk и протобуфами занимает минуты,
-# и гонять её на правку в cssharp/ или swiftly/ незачем.
+# Path filter: a C++ build with hl2sdk and protobufs takes minutes, and running it
+# for a change in cssharp/ or swiftly/ is pointless.
 on:
   push:
     branches: [main]
@@ -17,26 +17,48 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Ядро плагина не знает ни про hl2sdk, ни про MySQL, поэтому проверяется
-  # обычным компилятором за секунды. Здесь живут все инварианты: идемпотентность
-  # закрытия сессии, спул, разбор адреса, цвета чата, открытие .mmdb из памяти.
+  # The plugin core knows nothing about hl2sdk or MySQL, so it builds with a plain
+  # compiler in seconds. Every invariant lives here: idempotent session close, the
+  # spool, address parsing, chat colours, opening .mmdb from memory.
   core:
-    name: Ядро (тесты)
+    name: Core (tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Тесты ядра
+      # AMBuild reads build scripts with the locale default encoding, which is
+      # cp1252 on the Windows runner: one non-ASCII byte fails configure with
+      # UnicodeDecodeError. Cheaper to catch here than after a ten-minute build.
+      - name: Build scripts must be ASCII
+        working-directory: metamod
+        run: |
+          set -euo pipefail
+          for f in AMBuildScript AMBuilder PackageScript configure.py; do
+            python3 - "$f" <<'PY'
+          import sys
+          name = sys.argv[1]
+          data = open(name, 'rb').read()
+          try:
+              data.decode('ascii')
+          except UnicodeDecodeError as e:
+              line = data[:e.start].count(b'\n') + 1
+              sys.exit(f'::error file={name},line={line}::non-ASCII byte; '
+                       f'AMBuild cannot read this on the Windows runner')
+          PY
+          done
+          echo "all build scripts are ASCII"
+
+      - name: Core tests
         working-directory: metamod
         run: |
           make -f Makefile.tests -j"$(nproc)"
           ./build-tests/ch_tests
 
-  # Сборка самого плагина. Linux собирается в контейнере Steam Runtime 3:
-  # ABI выделенного сервера CS2 именно оттуда, и бинарь, собранный обычным
-  # ubuntu-раннером, на сервере не загрузится.
+  # Building the plugin itself. Linux builds inside the Steam Runtime 3 container:
+  # that is the ABI a CS2 dedicated server uses, and a binary from a plain ubuntu
+  # runner will not load.
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -62,8 +84,8 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      # hl2sdk и манифесты берём через checkout, а не сабмодулем: сабмодуль
-      # утянул бы гигабайты истории SDK в наш репозиторий навсегда.
+      # hl2sdk and the manifests come from checkout rather than a submodule: a
+      # submodule would drag gigabytes of SDK history into this repository forever.
       - name: Checkout hl2sdk (cs2)
         uses: actions/checkout@v4
         with:
@@ -86,20 +108,24 @@ jobs:
           path: mmsource-2.0
           submodules: recursive
 
+      # AMBuild ships inside the SteamRT3 image; only the Windows runner needs it.
+      # Installing it unconditionally fails there - that python has no pip at all.
       - name: Checkout AMBuild
+        if: matrix.os == 'windows-latest'
         uses: actions/checkout@v4
         with:
           repository: alliedmodders/ambuild
           path: ambuild
 
       - name: Install AMBuild
+        if: matrix.os == 'windows-latest'
         shell: bash
         run: |
           python -m pip install --upgrade pip setuptools
           cd ambuild && python -m pip install .
 
-      # Клиент MariaDB линкуется статически: игровой сервер не должен зависеть
-      # от того, установлен ли libmariadb в системе и какой он версии.
+      # The MariaDB client is linked statically: a game server must not depend on
+      # whether libmariadb is installed system-wide, nor on which version it is.
       - name: Build mariadb-connector-c
         shell: bash
         working-directory: ConnectHistory/metamod
