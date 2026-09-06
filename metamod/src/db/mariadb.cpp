@@ -11,6 +11,19 @@
 namespace ch {
 namespace {
 
+std::string ToLower(const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (const char c : value) {
+        out.push_back(static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c));
+    }
+    return out;
+}
+
+}  // namespace
+
+namespace {
+
 // Размер буфера под одно значение результата. Всё, что плагин читает, короче:
 // самая длинная колонка — connect_map VARCHAR(64). Обрезка всё равно
 // обрабатывается: молча укороченное значение хуже лишнего чтения.
@@ -69,12 +82,34 @@ bool MariaDatabase::Ensure(std::string* error) {
     mysql_optionsv(_handle, MYSQL_OPT_WRITE_TIMEOUT, &commandTimeout);
     mysql_optionsv(_handle, MYSQL_SET_CHARSET_NAME, "utf8mb4");
 
-    // Неизвестное значение из конфига не должно молча снижать защиту: всё,
-    // что не "None", трактуется как «шифрование желательно», а "Required" —
-    // как «без него не подключаемся».
-    if (_settings.sslMode == "Required" || _settings.sslMode == "required") {
-        my_bool enforce = 1;
-        mysql_optionsv(_handle, MYSQL_OPT_SSL_ENFORCE, &enforce);
+    // Режимы TLS повторяют MySqlConnector, потому что Settings.json по контракту
+    // переносится между целями без правок (см. docs/DATABASE.md). Там смысл такой:
+    //
+    //   None       - без TLS
+    //   Preferred  - TLS, если сервер умеет; сертификат НЕ проверяется
+    //   Required   - без TLS не подключаемся; сертификат НЕ проверяется
+    //   VerifyCA   - проверяем сертификат
+    //   VerifyFull - то же самое (имя хоста этот клиент отдельно не проверяет)
+    //
+    // Проверку приходится гасить ЯВНО: mariadb-connector-c проверяет сертификат
+    // по умолчанию, и Preferred падал с "Certificate verification failure" на
+    // обычной базе с самоподписанным сертификатом — то есть на большинстве
+    // хостингов. C#-цели в этом режиме подключались, нативная нет.
+    //
+    // VerifyCA/VerifyFull проверку оставляют включённой. Своего CA-файла в
+    // настройках нет, так что без системного доверия такое подключение упадёт —
+    // и правильно: человек, написавший VerifyFull, просил проверять, а тихо
+    // не проверять хуже, чем честно не подключиться.
+    const std::string mode = ToLower(_settings.sslMode);
+    const bool verify = mode == "verifyca" || mode == "verifyfull";
+    const bool enforce = verify || mode == "required";
+
+    my_bool verifyFlag = verify ? 1 : 0;
+    mysql_optionsv(_handle, MYSQL_OPT_SSL_VERIFY_SERVER_CERT, &verifyFlag);
+
+    if (enforce) {
+        my_bool enforceFlag = 1;
+        mysql_optionsv(_handle, MYSQL_OPT_SSL_ENFORCE, &enforceFlag);
     }
 
     const char* user = _settings.user.empty() ? nullptr : _settings.user.c_str();
