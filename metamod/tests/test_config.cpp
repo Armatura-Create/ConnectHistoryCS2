@@ -311,3 +311,54 @@ TEST_CASE("Конфиг по умолчанию задаёт номер серв
     CHECK(parsed["Server"]["Id"] == 1);
     CHECK_FALSE(parsed.contains("ServerId"));
 }
+
+// --- Выбор каталога настроек (3.0.2) ---
+//
+// Путь переехал в addons/configs/ConnectHistory, как у большинства нативных
+// плагинов CS2. Опасность переезда одна: у тех, кто уже настроил плагин,
+// конфиг лежит по старому пути, и молчаливый переход означал бы выброшенные
+// настройки и работу на дефолтах.
+
+TEST_CASE("Чистая установка читает новый путь") {
+    TempDir game;
+    ch::NullLogger logger;
+
+    CHECK(ch::ChooseConfigDirectory(game.Path(), &logger) ==
+          game.Path() + "/addons/configs/ConnectHistory");
+}
+
+TEST_CASE("Заполненный конфиг по старому пути продолжает работать") {
+    TempDir game;
+    ch::NullLogger logger;
+
+    const std::string legacy = game.Path() + "/addons/ConnectHistory/configs";
+    ch::ConfigService(&logger).LoadOrCreate(legacy);
+
+    CHECK(ch::ChooseConfigDirectory(game.Path(), &logger) == legacy);
+}
+
+TEST_CASE("Старый каталог без Settings.json не перехватывает новый путь") {
+    TempDir game;
+    ch::NullLogger logger;
+
+    // Пустой каталог мог остаться от удалённой установки; он не повод
+    // отправлять туда живой сервер
+    const std::string legacy = game.Path() + "/addons/ConnectHistory/configs";
+    const std::string command = "mkdir -p '" + legacy + "'";
+    REQUIRE(std::system(command.c_str()) == 0);
+
+    CHECK(ch::ChooseConfigDirectory(game.Path(), &logger) ==
+          game.Path() + "/addons/configs/ConnectHistory");
+}
+
+TEST_CASE("Новый путь выигрывает, когда старого нет вовсе") {
+    TempDir game;
+    ch::NullLogger logger;
+
+    const std::string chosen = ch::ChooseConfigDirectory(game.Path(), &logger);
+    ch::ConfigService service(&logger);
+    service.LoadOrCreate(chosen);
+
+    CHECK(Exists(chosen + "/Settings.json"));
+    CHECK(chosen == game.Path() + "/addons/configs/ConnectHistory");
+}

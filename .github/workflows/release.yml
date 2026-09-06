@@ -422,8 +422,8 @@ jobs:
             # Конфиги кладём В АРХИВ, а не надеемся, что плагин создаст их сам:
             # каталог сервера бывает только для чтения, а без Settings.json плагин
             # работает вхолостую и в базу не пишет ничего.
-            mkdir -p "$tree/addons/ConnectHistory/configs"
-            cp -a configs-default/. "$tree/addons/ConnectHistory/configs/"
+            mkdir -p "$tree/addons/configs/ConnectHistory"
+            cp -a configs-default/. "$tree/addons/configs/ConnectHistory/"
 
             ZIP="$PWD/ConnectHistory_metamod_${slug}_${PLUGIN_VERSION}.zip"
             (cd "$tree" && zip -rq "$ZIP" .)
@@ -437,8 +437,8 @@ jobs:
             for required in \
               "$binary" \
               "addons/metamod/ConnectHistory.vdf" \
-              "addons/ConnectHistory/configs/Settings.json" \
-              "addons/ConnectHistory/configs/Messages.json" \
+              "addons/configs/ConnectHistory/Settings.json" \
+              "addons/configs/ConnectHistory/Messages.json" \
               "addons/ConnectHistory/GeoLite2-Country.mmdb" \
               "addons/ConnectHistory/GeoLite2-City.mmdb"
             do
@@ -461,7 +461,7 @@ jobs:
             esac
 
             # Шаблон конфига едет в релиз намеренно, но ТОЛЬКО с пустым паролем
-            if unzip -p "$ZIP" addons/ConnectHistory/configs/Settings.json \
+            if unzip -p "$ZIP" addons/configs/ConnectHistory/Settings.json \
                | grep -qE '"Password"[[:space:]]*:[[:space:]]*"[^"]+"'; then
               echo "::error::в Settings.json архива $slug непустой пароль"
               exit 1
@@ -594,7 +594,7 @@ jobs:
             echo "|---|---|"
             echo "| CounterStrikeSharp | \`addons/counterstrikesharp/configs/plugins/ConnectHistory/\` |"
             echo "| SwiftlyS2 | \`addons/swiftlys2/configs/plugins/ConnectHistory/\` |"
-            echo "| Metamod:Source | \`addons/ConnectHistory/configs/\` |"
+            echo "| Metamod:Source | \`addons/configs/ConnectHistory/\` |"
             echo
             echo "Fill in the \`Database\` section of \`Settings.json\` and run \`ch_reload\`."
             echo "The plugin creates its tables itself."

@@ -90,22 +90,28 @@ One archive per OS — take `..._linux_...` or `..._windows_...`.
 
 ```
 addons/metamod/ConnectHistory.vdf
+addons/configs/ConnectHistory/
+├── Settings.json
+├── Messages.json
+├── Settings.schema.json
+├── Messages.schema.json
+└── README.txt
 addons/ConnectHistory/
 ├── bin/linuxsteamrt64/ConnectHistory.so   (or bin/win64/ConnectHistory.dll)
-├── configs/
-│   ├── Settings.json
-│   ├── Messages.json
-│   ├── Settings.schema.json
-│   ├── Messages.schema.json
-│   └── README.txt
 ├── GeoLite2-Country.mmdb
 └── GeoLite2-City.mmdb
 ```
 
-The archive already contains the default configs, so the plugin works even where
-the server directory is read-only. Keep the layout: the plugin looks for its
-configs in `csgo/addons/ConnectHistory/configs/` regardless of where the binary
-itself is, and says so in the console if it cannot get there.
+Configs live in the shared `addons/configs/` tree, next to every other native
+CS2 plugin's — so there is no separate rule to remember for this one. The
+archive already contains them, so the plugin works even where the server
+directory is read-only.
+
+The plugin looks in `csgo/addons/configs/ConnectHistory/` regardless of where
+the binary itself sits, and says in the console which directory it read. Configs
+left at the pre-3.0.2 path `addons/ConnectHistory/configs/` keep working and are
+preferred when present, so an upgrade never silently drops settings — the
+console says to move them.
 
 **When updating, do not unpack `configs/` over an existing install** — it would
 overwrite your `Settings.json` along with the database password.
@@ -127,7 +133,7 @@ filled-in one fails the build.
 |---|---|
 | CounterStrikeSharp | `csgo/addons/counterstrikesharp/configs/plugins/ConnectHistory/` |
 | SwiftlyS2 | `csgo/addons/swiftlys2/configs/plugins/ConnectHistory/` |
-| Metamod:Source | `csgo/addons/ConnectHistory/configs/` (fixed — not next to the binary) |
+| Metamod:Source | `csgo/addons/configs/ConnectHistory/` (fixed — not next to the binary) |
 
 The file format is identical: `Settings.json` and `Messages.json` move between
 platforms unchanged.

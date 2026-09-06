@@ -94,8 +94,11 @@ for task in MMSPlugin.binaries:
   if task.debug and cxx.target.platform == 'windows':
     package.addBinary(task.debug)
 
-  # Directories the plugin fills in on first run
-  builder.AddFolder(os.path.join(package.plugin_folder_path, 'configs'))
+  # Directories the plugin fills in on first run. Configs sit in the shared
+  # addons/configs tree, next to every other native CS2 plugin's, so a server
+  # owner does not have to remember a separate rule for this one.
+  builder.AddFolder(os.path.join(package.sdk_name, 'addons', 'configs',
+                                 MMSPlugin.metadata['name']))
   builder.AddFolder(os.path.join(package.plugin_folder_path, 'data'))
 
   # GeoLite2 databases: one copy per repository, all three targets ship it.

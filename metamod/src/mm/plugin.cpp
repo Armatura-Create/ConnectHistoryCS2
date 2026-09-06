@@ -130,8 +130,11 @@ bool ConnectHistoryPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t 
 
     const char* baseDirectory = g_SMAPI->GetBaseDir();
     _pluginDirectory = std::string(baseDirectory) + "/addons/ConnectHistory";
-    _configDirectory = _pluginDirectory + "/configs";
     _dataDirectory = _pluginDirectory + "/data";
+
+    // Логгер нужен раньше конфига: выбор каталога уже может о чём-то сообщить.
+    if (!_logger) _logger.reset(new ConsoleLogger(&_config));
+    _configDirectory = ChooseConfigDirectory(baseDirectory, _logger.get());
     _version = CH_VERSION;
 
     ReloadConfig();

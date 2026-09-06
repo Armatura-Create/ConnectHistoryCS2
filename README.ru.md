@@ -91,22 +91,28 @@ addons/swiftlys2/plugins/ConnectHistory/
 
 ```
 addons/metamod/ConnectHistory.vdf
+addons/configs/ConnectHistory/
+├── Settings.json
+├── Messages.json
+├── Settings.schema.json
+├── Messages.schema.json
+└── README.txt
 addons/ConnectHistory/
 ├── bin/linuxsteamrt64/ConnectHistory.so   (или bin/win64/ConnectHistory.dll)
-├── configs/
-│   ├── Settings.json
-│   ├── Messages.json
-│   ├── Settings.schema.json
-│   ├── Messages.schema.json
-│   └── README.txt
 ├── GeoLite2-Country.mmdb
 └── GeoLite2-City.mmdb
 ```
 
-Конфиги по умолчанию уже лежат в архиве — плагин работает и там, где каталог
-сервера доступен только на чтение. Раскладку менять не нужно: конфиги плагин
-ищет в `csgo/addons/ConnectHistory/configs/` независимо от того, где лежит сам
-бинарник, и пишет в консоль, если добраться туда не смог.
+Конфиги лежат в общем дереве `addons/configs/`, рядом с конфигами остальных
+нативных плагинов CS2 — отдельное правило именно для этого плагина помнить
+не нужно. В архиве они уже есть, поэтому плагин работает и там, где каталог
+сервера доступен только на чтение.
+
+Плагин ищет `csgo/addons/configs/ConnectHistory/` независимо от того, где лежит
+бинарник, и пишет в консоль, из какого каталога прочитал настройки. Конфиги,
+оставшиеся по пути до 3.0.2 — `addons/ConnectHistory/configs/`, — продолжают
+работать и имеют приоритет: обновление не выбросит настройки молча, а в консоли
+появится просьба их перенести.
 
 **При обновлении не распаковывайте `configs/` поверх существующей установки** —
 это затрёт ваш `Settings.json` вместе с паролем от базы.
@@ -127,7 +133,7 @@ addons/ConnectHistory/
 |---|---|
 | CounterStrikeSharp | `csgo/addons/counterstrikesharp/configs/plugins/ConnectHistory/` |
 | SwiftlyS2 | `csgo/addons/swiftlys2/configs/plugins/ConnectHistory/` |
-| Metamod:Source | `csgo/addons/ConnectHistory/configs/` (фиксированный, не рядом с бинарником) |
+| Metamod:Source | `csgo/addons/configs/ConnectHistory/` (фиксированный, не рядом с бинарником) |
 
 Формат файлов одинаковый: `Settings.json` и `Messages.json` переносятся между
 платформами без правок.

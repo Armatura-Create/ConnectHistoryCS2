@@ -237,6 +237,22 @@ std::string StripJsonExtras(const std::string& text) {
     return out;
 }
 
+std::string ChooseConfigDirectory(const std::string& gameDirectory, ILogger* logger) {
+    const std::string current = gameDirectory + "/addons/configs/ConnectHistory";
+    const std::string legacy = gameDirectory + "/addons/ConnectHistory/configs";
+
+    if (FileExists(Join(legacy, "Settings.json"))) {
+        if (logger != nullptr) {
+            logger->Warn("[Config] Настройки найдены по старому пути: " + legacy);
+            logger->Warn("[Config] Перенесите их в " + current +
+                         " — старый путь поддерживается, но однажды исчезнет");
+        }
+        return legacy;
+    }
+
+    return current;
+}
+
 // Проверка конфигурации.
 //
 // Существует потому, что молчаливая ошибка настройки выглядит как поломка чего-то
