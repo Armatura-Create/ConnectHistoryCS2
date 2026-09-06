@@ -28,7 +28,7 @@ different plugins on different servers and build a single report.
 |---|---|---|---|
 | **CounterStrikeSharp** | CSSharp ≥ 1.0.369 (hence Metamod:Source) | `ConnectHistory_cssharp_<version>.zip` | `addons/counterstrikesharp/plugins/ConnectHistory/` |
 | **SwiftlyS2** | SwiftlyS2 ≥ 1.4.9, Metamod **not needed** | `ConnectHistory_swiftly_<version>.zip` | `addons/swiftlys2/plugins/ConnectHistory/` |
-| **Metamod:Source** | Metamod:Source ≥ 2.0.0-git1322, nothing else | `ConnectHistory_metamod_<version>.zip` | `addons/ConnectHistory/` |
+| **Metamod:Source** | Metamod:Source ≥ 2.0.0-git1322, nothing else | `ConnectHistory_metamod_{linux,windows}_<version>.zip` | `addons/ConnectHistory/` |
 
 The native target records the connection history in full but collects no match
 results — what is missing and why is in

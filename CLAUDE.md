@@ -133,7 +133,7 @@ the `version` job and handed to every target: three plugins built from one tag m
 one number. MSBuild stamps it into the C# targets; a generated `src/mm/version.h` stamps
 the native one.
 
-The release body is taken from `CHANGELOG.md` — see [Releases](#releases).
+The release body is generated from the commits — see [Releases](#releases).
 
 Downside of path filters: a PR that does not touch a target produces no status for it, so
 such a check must never be made required in branch protection.
@@ -426,11 +426,21 @@ the first thing an owner sees about this plugin. Covered by `BannerTests` / `tes
 
 ## Releases
 
-`CHANGELOG.md` is the source of the release body. Add a section for the version **before**
-tagging; `release.yml` extracts that section and puts it in the GitHub release, so the
-release notes say what was added and fixed instead of dumping a commit list.
+**There is no `CHANGELOG.md`.** The `publish` job builds the release body from the
+commits between the previous `v*` tag and the new one, grouped by Conventional Commit
+type. A hand-maintained file is a file somebody forgets, and then a release ships with
+the previous version's description; commits cannot be forgotten.
 
-Keep entries short and grouped as `### Added` / `### Fixed` / `### Changed`.
+The consequence: **a commit subject is user-facing text.** `CONTRIBUTING.md` holds the
+format. A commit that does not match it is not dropped — it lands under "Other", because
+silently losing a change from the notes is worse than showing it uncategorised.
+
+The `publish` job therefore needs `fetch-depth: 0`: without the tags there is nothing to
+diff against, and the notes would silently cover the whole history.
+
+The metamod target ships **two archives**, one per OS
+(`ConnectHistory_metamod_{linux,windows}_<version>.zip`). One archive for both weighed
+twice what anyone needed, and half of it could not run on the machine it was unpacked on.
 
 ## Code graph
 

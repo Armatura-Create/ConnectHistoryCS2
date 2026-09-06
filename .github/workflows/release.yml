@@ -464,8 +464,13 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PLUGIN_VERSION: ${{ needs.version.outputs.version }}
+      RELEASE_TAG: ${{ needs.version.outputs.tag }}
     steps:
+      # Полная история и теги: описание релиза собирается из коммитов между
+      # предыдущим тегом и этим.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -476,27 +481,84 @@ jobs:
       - name: List artifacts
         run: ls -la artifacts
 
-      # The release body comes from CHANGELOG.md: a short "added / fixed" beats an
-      # automatic list of commits. No section means no release - quietly shipping a
-      # version with no description is worse than failing here.
+      # Описание собирается из коммитов, а не из файла: файл забывают обновить,
+      # и релиз уезжает с описанием от прошлой версии. Коммиты забыть нельзя.
+      #
+      # Разбор по Conventional Commits (feat:, fix:, ...) - см. CONTRIBUTING.md.
+      # Коммит не по форме не теряется: он попадает в "Прочее", потому что молча
+      # выбросить изменение хуже, чем показать его без категории.
       - name: Compose release notes
         run: |
           set -euo pipefail
 
-          python3 - "$PLUGIN_VERSION" > changelog-section.md <<'PY'
-          import re, sys
-          version = sys.argv[1]
-          text = open('CHANGELOG.md', encoding='utf-8').read()
-          match = re.search(r'^## +' + re.escape(version) + r'\s*$(.*?)(?=^## |\Z)',
-                            text, re.M | re.S)
-          if match is None or not match.group(1).strip():
-              sys.stderr.write(f'::error::CHANGELOG.md has no section for {version}\n')
-              sys.exit(1)
-          print(match.group(1).strip())
-          PY
+          PREV=$(git tag --list 'v*' --sort=-version:refname \
+                 | grep -v -x -F "$RELEASE_TAG" | head -n1 || true)
+          if [ -n "$PREV" ]; then
+            RANGE="$PREV..HEAD"
+            echo "Changes since $PREV"
+          else
+            RANGE="HEAD"
+            echo "No previous tag - using the whole history"
+          fi
+
+          git log --no-merges --pretty=format:'%s' "$RANGE" > commits.txt
+          wc -l commits.txt
+
+          python3 - > notes-body.md <<'PY_EOF'
+          import re, collections
+
+          GROUPS = [
+              ('feat',     'Added'),
+              ('fix',      'Fixed'),
+              ('perf',     'Performance'),
+              ('refactor', 'Changed'),
+              ('docs',     'Documentation'),
+              ('build',    'Build'),
+              ('ci',       'CI'),
+              ('test',     'Tests'),
+              ('chore',    'Chores'),
+          ]
+          TITLES = dict(GROUPS)
+          HEADER = re.compile(r'^(?P<type>[a-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?: (?P<text>.+)$')
+
+          buckets = collections.defaultdict(list)
+          breaking, other = [], []
+
+          for line in open('commits.txt', encoding='utf-8'):
+              line = line.strip()
+              if not line:
+                  continue
+              m = HEADER.match(line)
+              if not m:
+                  other.append(line)
+                  continue
+              text = m.group('text')
+              scope = m.group('scope')
+              entry = f'**{scope}**: {text}' if scope else text
+              if m.group('bang'):
+                  breaking.append(entry)
+              elif m.group('type') in TITLES:
+                  buckets[m.group('type')].append(entry)
+              else:
+                  other.append(line)
+
+          out = []
+          if breaking:
+              out.append('### Breaking changes')
+              out += [f'- {e}' for e in breaking] + ['']
+          for key, title in GROUPS:
+              if buckets[key]:
+                  out.append(f'### {title}')
+                  out += [f'- {e}' for e in buckets[key]] + ['']
+          if other:
+              out.append('### Other')
+              out += [f'- {e}' for e in other] + ['']
+
+          print('\n'.join(out).strip() or '_No changes in history._')
+          PY_EOF
 
           {
-            cat changelog-section.md
+            cat notes-body.md
             echo
             echo "---"
             echo
@@ -504,13 +566,21 @@ jobs:
             echo
             echo "| Archive | Requirements |"
             echo "|---|---|"
-            echo "| \`ConnectHistory_cssharp_${PLUGIN_VERSION}.zip\` | CounterStrikeSharp >= 1.0.369 (Metamod:Source) |"
-            echo "| \`ConnectHistory_swiftly_${PLUGIN_VERSION}.zip\` | SwiftlyS2 >= 1.4.9 (Metamod not needed) |"
-            echo "| \`ConnectHistory_metamod_${PLUGIN_VERSION}.zip\` | Metamod:Source (native; Windows + Linux in one archive) |"
+            echo "| \`ConnectHistory_cssharp_${PLUGIN_VERSION}.zip\` | CounterStrikeSharp >= 1.0.369 (hence Metamod:Source) |"
+            echo "| \`ConnectHistory_swiftly_${PLUGIN_VERSION}.zip\` | SwiftlyS2 >= 1.4.9, Metamod not needed |"
+            echo "| \`ConnectHistory_metamod_linux_${PLUGIN_VERSION}.zip\` | Metamod:Source >= 2.0.0-git1322, Linux |"
+            echo "| \`ConnectHistory_metamod_windows_${PLUGIN_VERSION}.zip\` | Metamod:Source >= 2.0.0-git1322, Windows |"
             echo
-            echo "Extract into the root of your game server. The plugin creates its configs and"
-            echo "database tables on first run: fill in the \`Database\` section of \`Settings.json\`"
-            echo "and reload the configuration."
+            echo "Extract into the root of your game server. Settings live in:"
+            echo
+            echo "| Target | Config directory |"
+            echo "|---|---|"
+            echo "| CounterStrikeSharp | \`addons/counterstrikesharp/configs/plugins/ConnectHistory/\` |"
+            echo "| SwiftlyS2 | \`addons/swiftlys2/configs/plugins/ConnectHistory/\` |"
+            echo "| Metamod:Source | \`addons/ConnectHistory/configs/\` |"
+            echo
+            echo "Fill in the \`Database\` section of \`Settings.json\` and run \`ch_reload\`."
+            echo "The plugin creates its tables itself."
             echo
             echo "Schema and query cookbook: [docs/DATABASE.md](docs/DATABASE.md)."
           } > release-notes.md

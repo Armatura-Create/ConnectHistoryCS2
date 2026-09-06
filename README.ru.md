@@ -29,7 +29,7 @@
 |---|---|---|---|
 | **CounterStrikeSharp** | CSSharp ≥ 1.0.369 (значит, и Metamod:Source) | `ConnectHistory_cssharp_<версия>.zip` | `addons/counterstrikesharp/plugins/ConnectHistory/` |
 | **SwiftlyS2** | SwiftlyS2 ≥ 1.4.9, Metamod **не нужен** | `ConnectHistory_swiftly_<версия>.zip` | `addons/swiftlys2/plugins/ConnectHistory/` |
-| **Metamod:Source** | Metamod:Source ≥ 2.0.0-git1322, больше ничего | `ConnectHistory_metamod_<версия>.zip` | `addons/ConnectHistory/` |
+| **Metamod:Source** | Metamod:Source ≥ 2.0.0-git1322, больше ничего | `ConnectHistory_metamod_{linux,windows}_<версия>.zip` | `addons/ConnectHistory/` |
 
 Нативная цель пишет историю подключений полностью, но не собирает игровые
 итоги — чего именно нет и почему, написано в
