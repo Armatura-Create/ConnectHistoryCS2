@@ -40,10 +40,20 @@ class SDKPackage:
     self.bin = builder.AddFolder(self.bin_path)
 
   def generateVDF(self):
+    # The path inside the VDF is ALWAYS written with forward slashes, whatever
+    # the build host uses. A VDF is a KeyValues file, where a backslash starts an
+    # escape: "addons\ConnectHistory\bin\win64\..." parses as \C, \b (which is
+    # a backspace) and \w, so a Windows-built VDF pointed at a path that does not
+    # exist. Metamod accepts forward slashes on both systems.
+    plugin_file = '/'.join(
+      os.path.relpath(self.bin_path, self.sdk_name).split(os.sep)
+      + [MMSPlugin.metadata['name']]
+    )
+
     vdf_content = '"Metamod Plugin"\n'
     vdf_content += '{\n'
     vdf_content += f'\t"alias"\t"{MMSPlugin.metadata["alias"]}"\n'
-    vdf_content += f'\t"file"\t"{os.path.join(os.path.relpath(self.bin_path, self.sdk_name), MMSPlugin.metadata["name"])}"\n'
+    vdf_content += f'\t"file"\t"{plugin_file}"\n'
     vdf_content += '}'
 
     builder.AddOutputFile(os.path.join(self.metamod_path,
