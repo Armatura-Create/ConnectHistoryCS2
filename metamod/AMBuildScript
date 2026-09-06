@@ -399,6 +399,9 @@ const char *PLUGIN_FULL_VERSION   = \"{version}\";
         '_CRT_SECURE_NO_DEPRECATE',
         '_CRT_SECURE_NO_WARNINGS',
         '_CRT_NONSTDC_NO_DEPRECATE',
+        # windows.h defines max and min as macros, which turns every
+        # std::max(...) in the sources into a syntax error.
+        'NOMINMAX',
       ]
       cxx.cflags += [
         '/W3',

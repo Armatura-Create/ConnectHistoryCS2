@@ -71,12 +71,19 @@ CON_COMMAND_F(ch_lastseen, "ch_lastseen <steamid64> — последние за�
 }  // namespace
 
 void ConnectHistoryPlugin::RegisterPluginCommands() {
-    // CON_COMMAND_F регистрирует команды сам при загрузке модуля; отдельной
-    // регистрации не требуется. Метод оставлен точкой расширения и симметрии
-    // с Unload.
+    // На Source 2 объект ConCommand, созданный CON_COMMAND_F при загрузке
+    // модуля, движку ещё не известен: его отдаёт ConVar_Register. Плагин
+    // Metamod обязан вызвать её через META_CONVAR_REGISTER, чтобы MM:S знал,
+    // чьи это команды и что снимать при выгрузке. Без этого ch_status просто
+    // не существует в консоли.
+    META_CONVAR_REGISTER(FCVAR_RELEASE | FCVAR_GAMEDLL);
 }
 
-void ConnectHistoryPlugin::UnregisterPluginCommands() {}
+void ConnectHistoryPlugin::UnregisterPluginCommands() {
+    // Симметрия обязательна: команды живут в выгружаемой библиотеке, и
+    // оставленный движку указатель на неё — падение при следующем вызове.
+    ConVar_Unregister();
+}
 
 void ConnectHistoryPlugin::CommandStatus() {
     META_CONPRINTF("[ConnectHistory] %s\n", _version.c_str());

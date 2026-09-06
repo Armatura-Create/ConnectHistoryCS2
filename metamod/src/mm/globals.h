@@ -6,7 +6,6 @@
 #pragma once
 
 class IVEngineServer2;
-class ICvar;
 class ISource2Server;
 // Именно ISource2GameClients: IServerGameClients в eiface.h — typedef, и
 // форвард-объявление его классом ломает сборку раньше первой полезной ошибки.
@@ -15,8 +14,12 @@ class ISource2GameClients;
 namespace ch {
 
 extern IVEngineServer2* g_engine;
-extern ICvar* g_cvar;
 extern ISource2Server* g_server;
+
+// ICvar своего указателя не имеет специально: интерфейс забирается в g_pCVar
+// из tier1, потому что ConVar_Register (а значит и META_CONVAR_REGISTER)
+// смотрит именно туда. Свой второй указатель молча оставил бы регистрацию
+// команд работать по нулю.
 extern ISource2GameClients* g_gameClients;
 
 }  // namespace ch

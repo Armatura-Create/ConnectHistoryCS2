@@ -34,7 +34,6 @@ SH_DECL_HOOK6_void(IServerGameClients, OnClientConnected, SH_NOATTRIB, 0, CPlaye
 namespace ch {
 
 IVEngineServer2* g_engine = nullptr;
-ICvar* g_cvar = nullptr;
 ISource2Server* g_server = nullptr;
 IServerGameClients* g_gameClients = nullptr;
 
@@ -120,7 +119,7 @@ bool ConnectHistoryPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t 
 
     GET_V_IFACE_CURRENT(GetEngineFactory, g_engine, IVEngineServer2,
                         SOURCE2ENGINETOSERVER_INTERFACE_VERSION);
-    GET_V_IFACE_CURRENT(GetEngineFactory, g_cvar, ICvar, CVAR_INTERFACE_VERSION);
+    GET_V_IFACE_CURRENT(GetEngineFactory, g_pCVar, ICvar, CVAR_INTERFACE_VERSION);
     GET_V_IFACE_ANY(GetServerFactory, g_server, ISource2Server,
                     SOURCE2SERVER_INTERFACE_VERSION);
     GET_V_IFACE_ANY(GetServerFactory, g_gameClients, IServerGameClients,
@@ -517,7 +516,7 @@ std::string ConnectHistoryPlugin::CurrentMap() const {
 }
 
 std::string ConnectHistoryPlugin::ReadConVar(const char* name) const {
-    if (g_cvar == nullptr) return std::string();
+    if (g_pCVar == nullptr) return std::string();
 
     ConVarRefAbstract convar(name);
     if (!convar.IsValidRef()) return std::string();

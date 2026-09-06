@@ -38,6 +38,11 @@
 class CPlayerSlot;
 enum ENetworkDisconnectionReason : int;
 
+// g_SMAPI, g_PLAPI, g_PLID, g_SHPtr. Объявить их обязан КАЖДЫЙ файл цели:
+// META_CONPRINTF и SH_ADD_HOOK — это макросы поверх этих указателей, а
+// определяет их PLUGIN_EXPOSE ровно один раз, в самом низу plugin.cpp.
+PLUGIN_GLOBALVARS();
+
 namespace ch {
 
 class ConsoleLogger;
