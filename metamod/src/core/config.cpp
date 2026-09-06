@@ -237,6 +237,50 @@ std::string StripJsonExtras(const std::string& text) {
     return out;
 }
 
+// Проверка конфигурации.
+//
+// Существует потому, что молчаливая ошибка настройки выглядит как поломка чего-то
+// другого. Незаполненная секция Database даёт не "заполните конфиг", а таймаут
+// подключения к 127.0.0.1 — и владелец сервера идёт чинить MySQL, который не при
+// чём. Такой же блок есть в C#-целях; при портировании на C++ он потерялся.
+void ConfigService::Validate(const Config& config, const std::string& directory) const {
+    if (_logger == nullptr) return;
+
+    if (config.database.host.empty() || config.database.database.empty() ||
+        config.database.user.empty()) {
+        _logger->Error("[Config] Секция Database заполнена не полностью (Host/Database/User). "
+                       "История подключений собираться не будет");
+        _logger->Error("[Config] Проверьте " + Join(directory, "Settings.json") +
+                       " — плагин читает ИМЕННО этот файл");
+    }
+
+    if (config.serverId <= 0) {
+        _logger->Warn("[Config] Server.Id <= 0. Разным серверам нужны разные номера, "
+                      "иначе их сессии смешаются в одну кучу");
+    }
+
+    if (config.collect.ipHash && config.collect.ipHashSalt.empty()) {
+        _logger->Warn("[Config] Collect.IpHash включён, но IpHashSalt пуст. "
+                      "Хеш без соли обратим перебором IPv4 за минуты — хеширование отключено");
+    }
+
+    if (!config.collect.playerIp && !config.collect.ipHash && !config.collect.geoIp) {
+        _logger->Info("[Config] Сбор сетевых данных полностью отключён");
+    }
+
+    const bool localDb = config.database.host == "127.0.0.1" ||
+                         config.database.host == "localhost" || config.database.host == "::1";
+    if (!localDb && config.database.sslMode == "None") {
+        _logger->Warn("[Config] SslMode=None при удалённой базе: ники, SteamID и IP игроков "
+                      "идут по сети открытым текстом. Рекомендуется Required");
+    }
+
+    // Печатается ВСЕГДА, а не только на первом запуске: без этой строки нельзя
+    // отличить "конфиг не заполнен" от "заполнен не тот файл", а это разные
+    // починки. Ровно на этом и застревали.
+    _logger->Info("[Config] Конфигурация загружена из " + directory);
+}
+
 Config ConfigService::LoadOrCreate(const std::string& configDirectory) {
     _failedFiles.clear();
     _directory = configDirectory;
@@ -377,6 +421,7 @@ Config ConfigService::LoadOrCreate(const std::string& configDirectory) {
         }
     }
 
+    Validate(config, configDirectory);
     return config;
 }
 

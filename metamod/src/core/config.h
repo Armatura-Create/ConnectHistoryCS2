@@ -115,6 +115,9 @@ public:
     Config LoadOrCreate(const std::string& configDirectory);
 
 private:
+    // Жалобы на настройку, которая внешне выглядит поломкой чего-то другого.
+    void Validate(const Config& config, const std::string& directory) const;
+
     ILogger* _logger;
     std::string _directory;
     std::vector<std::string> _failedFiles;
