@@ -178,15 +178,17 @@ not collect them.
 | `team_final`, `team_changes` | yes | yes | **always `0`** |
 | `spectator_seconds` | yes | yes | **always `0`** |
 | `score` | yes | yes | **always `NULL`** |
-| `ping_avg`, `ping_min`, `ping_max`, `ping_samples` | yes | yes | **always `NULL`** |
+| `ping_avg`, `ping_min`, `ping_max`, `ping_samples` | yes | yes | yes |
 | `ch_online_snapshots.bots` | yes | yes | **always `0`** |
 
 **Why the native target fills in no match results.** Two different walls, both made
 of the same brick — an address that has to be guessed.
 
-*Score and ping* live only in the player controller's fields, and reaching the
-controller requires a pointer to `CGameEntitySystem` obtained by an offset from
-`GameResourceServiceServer`.
+*Score* lives only in the player controller's fields, and reaching the controller
+requires a pointer to `CGameEntitySystem` obtained by an offset from
+`GameResourceServiceServer`. (Ping used to be listed here too; it turned out to be
+reachable through `IVEngineServer2::GetPlayerNetInfo`, a factory interface, and is
+now collected.)
 
 *Kills, deaths, assists, damage, MVP, rounds and team changes* arrive as game events,
 but no factory in CS2 hands out `IGameEventManager2`. The only route to it is to

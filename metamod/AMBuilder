@@ -41,6 +41,7 @@ for sdk_target in MMSPlugin.sdk_targets:
 
     # Metamod layer: the only place that talks to the engine
     'src/mm/plugin.cpp',
+    'src/mm/chat.cpp',
     'src/mm/commands.cpp',
 
     # libmaxminddb as a single wrapper file, which also adds opening the database

@@ -12,8 +12,11 @@
 #include "mm/version.h"
 
 #include <eiface.h>
+#include <engine/igameeventsystem.h>
 #include <icvar.h>
+#include <inetchannelinfo.h>
 #include <iserver.h>
+#include <networksystem/inetworkmessages.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -31,10 +34,17 @@ SH_DECL_HOOK5_void(IServerGameClients, ClientDisconnect, SH_NOATTRIB, 0, CPlayer
 SH_DECL_HOOK6_void(IServerGameClients, OnClientConnected, SH_NOATTRIB, 0, CPlayerSlot,
                    const char*, uint64, const char*, const char*, bool);
 
+// Единственный способ услышать чат без игровых событий: через ICvar проходит
+// и say, и say_team, и любая консольная команда игрока.
+SH_DECL_HOOK3_void(ICvar, DispatchConCommand, SH_NOATTRIB, 0, ConCommandRef,
+                   const CCommandContext&, const CCommand&);
+
 namespace ch {
 
 IVEngineServer2* g_engine = nullptr;
 ISource2Server* g_server = nullptr;
+IGameEventSystem* g_gameEventSystem = nullptr;
+INetworkMessages* g_networkMessages = nullptr;
 IServerGameClients* g_gameClients = nullptr;
 
 ConnectHistoryPlugin g_plugin;
@@ -124,6 +134,10 @@ bool ConnectHistoryPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t 
                     SOURCE2SERVER_INTERFACE_VERSION);
     GET_V_IFACE_ANY(GetServerFactory, g_gameClients, IServerGameClients,
                     SOURCE2GAMECLIENTS_INTERFACE_VERSION);
+    GET_V_IFACE_ANY(GetEngineFactory, g_gameEventSystem, IGameEventSystem,
+                    GAMEEVENTSYSTEM_INTERFACE_VERSION);
+    GET_V_IFACE_ANY(GetEngineFactory, g_networkMessages, INetworkMessages,
+                    NETWORKMESSAGES_INTERFACE_VERSION);
 
     // Нужно, чтобы приходили события IMetamodListener (в том числе OnLevelInit)
     g_SMAPI->AddListener(this, this);
@@ -157,6 +171,8 @@ bool ConnectHistoryPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t 
                 SH_MEMBER(this, &ConnectHistoryPlugin::Hook_ClientPutInServer), true);
     SH_ADD_HOOK(IServerGameClients, ClientDisconnect, g_gameClients,
                 SH_MEMBER(this, &ConnectHistoryPlugin::Hook_ClientDisconnect), true);
+    SH_ADD_HOOK(ICvar, DispatchConCommand, g_pCVar,
+                SH_MEMBER(this, &ConnectHistoryPlugin::Hook_DispatchConCommand), false);
 
     RegisterPluginCommands();
 
@@ -196,6 +212,8 @@ bool ConnectHistoryPlugin::Unload(char* error, size_t maxlen) {
                    SH_MEMBER(this, &ConnectHistoryPlugin::Hook_ClientPutInServer), true);
     SH_REMOVE_HOOK(IServerGameClients, ClientDisconnect, g_gameClients,
                    SH_MEMBER(this, &ConnectHistoryPlugin::Hook_ClientDisconnect), true);
+    SH_REMOVE_HOOK(ICvar, DispatchConCommand, g_pCVar,
+                   SH_MEMBER(this, &ConnectHistoryPlugin::Hook_DispatchConCommand), false);
 
     // Открытые сессии закрываем явно: иначе выгрузка плагина оставляет их
     // висеть в базе, и «кто сейчас онлайн» врёт до следующего старта.
@@ -304,6 +322,28 @@ void ConnectHistoryPlugin::Hook_ClientDisconnect(CPlayerSlot slot,
     RETURN_META(MRES_IGNORED);
 }
 
+void ConnectHistoryPlugin::Hook_DispatchConCommand(ConCommandRef command,
+                                                   const CCommandContext& context,
+                                                   const CCommand& args) {
+    (void)command;
+
+    // -1 — это консоль сервера, а не игрок: там команды и так работают напрямую
+    const int slot = context.GetPlayerSlot().Get();
+    if (slot < 0 || args.ArgC() < 2) RETURN_META(MRES_IGNORED);
+
+    const char* verb = args.Arg(0);
+    if (verb == nullptr) RETURN_META(MRES_IGNORED);
+    if (std::strcmp(verb, "say") != 0 && std::strcmp(verb, "say_team") != 0) {
+        RETURN_META(MRES_IGNORED);
+    }
+
+    // Проглатываем ТОЛЬКО свои команды. Плагин истории, съедающий чужой say,
+    // ломает чат-плагины, стоящие рядом, и найти это будет нечем.
+    if (HandleChatCommand(slot, args.Arg(1))) RETURN_META(MRES_SUPERCEDE);
+
+    RETURN_META(MRES_IGNORED);
+}
+
 // Периодическая работа. Кадр — единственное место, где мы гарантированно
 // в главном потоке и можем трогать движок.
 void ConnectHistoryPlugin::Hook_GameFrame(bool simulating, bool firstTick, bool lastTick) {
@@ -323,6 +363,13 @@ void ConnectHistoryPlugin::Hook_GameFrame(bool simulating, bool firstTick, bool 
     if (_config.collect.onlineSnapshots && now >= _nextSnapshotAt) {
         _nextSnapshotAt = now + std::max(30, _config.collect.onlineSnapshotIntervalSeconds);
         TakeOnlineSnapshot();
+    }
+
+    // Пинг снимается ТОЛЬКО отсюда: это главный поток, а INetChannelInfo —
+    // память движка. Из фонового потока это чтение чужой памяти.
+    if (_config.collect.ping && now >= _nextPingAt) {
+        _nextPingAt = now + std::max(5, _config.collect.pingSampleIntervalSeconds);
+        SamplePings();
     }
 
     RETURN_META(MRES_IGNORED);
@@ -446,8 +493,13 @@ void ConnectHistoryPlugin::CloseSession(OpenSession session, SessionEndKind kind
         job.stats.team = session.LastTeam() < 0 ? 0 : session.LastTeam();
     }
 
-    // ping_* в этой цели не собираются — см. комментарий к классу
-    job.pingSamples = 0;
+    // Пинг берётся из INetChannelInfo — фабричный интерфейс, смещений не нужно.
+    // При нуле замеров писатель оставит колонки NULL, а не нули: «не мерили»
+    // и «пинг ноль» — разные вещи.
+    job.pingAvg = session.PingAvg();
+    job.pingMin = session.PingMin();
+    job.pingMax = session.PingMax();
+    job.pingSamples = session.PingSamples();
 
     if (_writer) _writer->Enqueue(job);
 
@@ -527,6 +579,50 @@ std::string ConnectHistoryPlugin::ReadConVar(const char* name) const {
     const CUtlString value = convar.GetString();
     const char* text = value.Get();
     return text != nullptr ? std::string(text) : std::string();
+}
+
+uint64_t ConnectHistoryPlugin::SteamIdForSlot(int slot) const {
+    if (slot < 0) return 0;
+
+    const auto known = _slots.find(slot);
+    if (known == _slots.end() || known->second.fake) return 0;
+
+    return known->second.steamId;
+}
+
+// Пинг всех, у кого открыта сессия.
+//
+// GetPlayerNetInfo отдаёт канал связи с клиентом; GetAvgLatency — усреднённая
+// задержка В СЕКУНДАХ, поэтому переводим в миллисекунды. Ноль означает «замер
+// не получился» (игрок ещё грузится, бот, канал закрыт) — AddPing такие
+// отбрасывает сам.
+void ConnectHistoryPlugin::SamplePings() {
+    if (g_engine == nullptr) return;
+
+    for (const auto& entry : _slots) {
+        if (entry.second.fake || entry.second.steamId == 0) continue;
+
+        INetChannelInfo* channel = g_engine->GetPlayerNetInfo(entry.first);
+        if (channel == nullptr) continue;
+
+        const float seconds = channel->GetAvgLatency();
+        if (seconds <= 0.0f) continue;
+
+        const int32_t milliseconds = static_cast<int32_t>(seconds * 1000.0f + 0.5f);
+        _sessions.Update(entry.second.steamId, [milliseconds](OpenSession& session) {
+            session.AddPing(milliseconds);
+        });
+    }
+}
+
+// Язык клиента — из его же cl_language, как это делают C#-цели через хост.
+std::string ConnectHistoryPlugin::ClientLanguage(int slot) const {
+    if (g_engine == nullptr || slot < 0) return _config.defaultLang;
+
+    const char* value = g_engine->GetClientConVarValue(slot, "cl_language");
+    if (value == nullptr || *value == '\0') return _config.defaultLang;
+
+    return std::string(value);
 }
 
 int ConnectHistoryPlugin::CountHumans() const {

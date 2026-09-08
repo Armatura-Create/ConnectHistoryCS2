@@ -77,10 +77,21 @@ deliberate exception — it is the Russian translation of the user-facing README
   (this is what CS2Fixes does) and hook that. Nothing in CI can verify such an address,
   and a wrong one kills the server on load rather than failing a build. So `kills`,
   `deaths`, `assists`, `damage`, `mvp`, `rounds_played`, `team_*` and `spectator_seconds`
-  stay `0`, and `score` / `ping_*` stay `NULL` (those two would additionally need a
+  stay `0`, and `score` stays `NULL` (that one would additionally need a
   `CGameEntitySystem` pointer obtained by offset). If you ever add the vtable lookup,
   it changes what this target promises — update this section, `docs/DATABASE.md` and
   the header comment of `src/mm/plugin.h` together.
+- **Chat and ping need no offsets, contrary to what this file used to say.** The reply
+  goes out as a `CUserMessageSayText2` allocated by `INetworkMessageInternal` and posted
+  through `IGameEventSystem`; the chat is heard by hooking `ICvar::DispatchConCommand`
+  (`say` / `say_team`); `ping_*` comes from `IVEngineServer2::GetPlayerNetInfo` →
+  `INetChannelInfo::GetAvgLatency`. Every one of those is a factory interface. The
+  UserMessage lives alone in `src/mm/chat.cpp`. Ping is sampled **only** from
+  `Hook_GameFrame` — `INetChannelInfo` is engine memory, and reading it from the
+  background thread is reading someone else's memory.
+- **Only our own chat commands are swallowed** (`MRES_SUPERCEDE`). A history plugin that
+  eats every `say` breaks the chat plugins installed next to it, and nothing would point
+  at us as the cause.
 - **`.mmdb` is opened from memory only** (`ch_mmdb_open_memory`): `libmaxminddb` offers
   nothing but `mmap`, and a page fault inside a game process is a SIGBUS that kills the
   server with no stack. The wrapper `#include`s `maxminddb.c` whole so the submodule stays

@@ -183,12 +183,14 @@ Key options:
 |---|---|---|---|
 | connectivity, queue, last error | `css_ch_status` (`@css/root`) | `sw_ch_status` | `ch_status` (server console) |
 | reload configuration | `css_ch_reload` (`@css/root`) | `sw_ch_reload` | `ch_reload` (server console) |
-| own playtime | `css_playtime` (player) | `sw_playtime` (player) | `ch_playtime <steamid64>` (console) |
-| recent sessions | `css_lastseen` (player) | `sw_lastseen` (player) | `ch_lastseen <steamid64>` (console) |
+| own playtime | `css_playtime` (player) | `sw_playtime` (player) | `!playtime` / `ch_playtime` (player), `ch_playtime <steamid64>` (console) |
+| recent sessions | `css_lastseen` (player) | `sw_lastseen` (player) | `!lastseen` / `ch_lastseen` (player), `ch_lastseen <steamid64>` (console) |
 
-In the native target the player commands are console commands: sending a message
-to a specific player goes through a protobuf UserMessage, and an "almost working"
-command that prints the answer in the wrong place is worse than an honest console one.
+In the native target the player commands answer in chat, like everywhere else — both
+`!playtime` and `/playtime` work, and only your own commands are swallowed, so other
+chat plugins keep seeing everything else. From the server console the same commands
+take a SteamID64 and answer in the console, which is how you ask about a player who
+is not on the server right now.
 
 ## Database
 

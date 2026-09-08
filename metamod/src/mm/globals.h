@@ -7,6 +7,8 @@
 
 class IVEngineServer2;
 class ISource2Server;
+class IGameEventSystem;
+class INetworkMessages;
 // Именно ISource2GameClients: IServerGameClients в eiface.h — typedef, и
 // форвард-объявление его классом ломает сборку раньше первой полезной ошибки.
 class ISource2GameClients;
@@ -15,6 +17,11 @@ namespace ch {
 
 extern IVEngineServer2* g_engine;
 extern ISource2Server* g_server;
+
+// Доставка UserMessage в чат (см. mm/chat.cpp). Оба — фабричные интерфейсы,
+// сигнатур и смещений для чата не требуется.
+extern IGameEventSystem* g_gameEventSystem;
+extern INetworkMessages* g_networkMessages;
 
 // ICvar своего указателя не имеет специально: интерфейс забирается в g_pCVar
 // из tier1, потому что ConVar_Register (а значит и META_CONVAR_REGISTER)

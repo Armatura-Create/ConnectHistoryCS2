@@ -2,24 +2,26 @@
 //
 // Админские существуют, чтобы петля «что-то не пишется → в чём причина» была
 // секундой, а не чтением логов: ch_status показывает связь с базой, очередь
-// и последнюю ошибку.
+// и последнюю ошибку. Они доступны только с консоли сервера: своей системы прав
+// у Metamod нет, а изобретать её ради двух команд значило бы завести ещё один
+// файл с правами, который разъедется с настоящим.
 //
-// Права проверяются просто: все команды доступны только с консоли сервера.
-// Своей системы прав у Metamod нет, а изобретать её ради четырёх команд значило бы
-// завести ещё один файл с правами, который разъедется с настоящим.
+// Игроцкие — ch_playtime и ch_lastseen — работают и из чата (!playtime,
+// /playtime), и из консоли клиента, и отвечают В ЧАТ, как в целях на C#.
+// Раньше здесь стояло, что так нельзя: «отправка сообщения конкретному игроку
+// идёт через UserMessage с протобуфами SDK, и проверить такую сборку без живого
+// сервера невозможно». Первая половина верна, вывод — нет: тип сообщения отдаёт
+// INetworkMessages, доставку делает IGameEventSystem, чат слышен через хук
+// ICvar::DispatchConCommand. Всё это фабричные интерфейсы, ни одного смещения.
 //
-// ОГРАНИЧЕНИЕ ЭТОЙ ЦЕЛИ. В C#-версиях ch_playtime и ch_lastseen — команды ИГРОКА,
-// и ответ уходит ему в чат. Здесь они консольные и принимают SteamID аргументом:
-// отправка сообщения конкретному игроку в CS2 идёт через UserMessage с протобуфами
-// SDK, и проверить такую сборку без живого сервера невозможно. Отдавать вместо
-// этого «почти работающую» команду, печатающую ответ не туда, — хуже, чем честно
-// иметь консольную. Тексты, подстановки и Messages.json при этом уже общие
-// с остальными целями.
+// С консоли сервера те же команды принимают SteamID аргументом и отвечают
+// в консоль — так админ спрашивает про игрока, которого сейчас нет на сервере.
 #include "core/config.h"
 #include "core/logger.h"
 #include "core/query_service.h"
 #include "core/util/chat_format.h"
 #include "core/util/timeutil.h"
+#include "mm/chat.h"
 #include "mm/globals.h"
 #include "mm/plugin.h"
 
@@ -28,6 +30,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <map>
 #include <string>
 
@@ -48,24 +51,30 @@ CON_COMMAND_F(ch_reload, "Перечитать конфигурацию ConnectH
     g_plugin.CommandReload();
 }
 
-CON_COMMAND_F(ch_playtime, "ch_playtime <steamid64> — наигранное время игрока",
-              FCVAR_GAMEDLL | FCVAR_RELEASE) {
-    if (context.GetPlayerSlot().Get() != -1) return;
+// Обе команды работают с двух сторон: игрок спрашивает про себя и получает
+// ответ в чат, консоль сервера спрашивает про кого угодно по SteamID.
+uint64_t TargetSteamId(const CCommandContext& context, const CCommand& args,
+                       const char* usage) {
+    const int slot = context.GetPlayerSlot().Get();
+    if (slot >= 0) return g_plugin.SteamIdForSlot(slot);
+
     if (args.ArgC() < 2) {
-        META_CONPRINTF("[ConnectHistory] Использование: ch_playtime <steamid64>\n");
-        return;
+        META_CONPRINTF("[ConnectHistory] Использование: %s <steamid64>\n", usage);
+        return 0;
     }
-    g_plugin.CommandPlaytime(std::strtoull(args.Arg(1), nullptr, 10));
+    return std::strtoull(args.Arg(1), nullptr, 10);
 }
 
-CON_COMMAND_F(ch_lastseen, "ch_lastseen <steamid64> — последние заходы игрока",
+CON_COMMAND_F(ch_playtime, "ch_playtime [steamid64] — наигранное время игрока",
               FCVAR_GAMEDLL | FCVAR_RELEASE) {
-    if (context.GetPlayerSlot().Get() != -1) return;
-    if (args.ArgC() < 2) {
-        META_CONPRINTF("[ConnectHistory] Использование: ch_lastseen <steamid64>\n");
-        return;
-    }
-    g_plugin.CommandLastSeen(std::strtoull(args.Arg(1), nullptr, 10));
+    const uint64_t steamId = TargetSteamId(context, args, "ch_playtime");
+    if (steamId != 0) g_plugin.CommandPlaytime(steamId, context.GetPlayerSlot().Get());
+}
+
+CON_COMMAND_F(ch_lastseen, "ch_lastseen [steamid64] — последние заходы игрока",
+              FCVAR_GAMEDLL | FCVAR_RELEASE) {
+    const uint64_t steamId = TargetSteamId(context, args, "ch_lastseen");
+    if (steamId != 0) g_plugin.CommandLastSeen(steamId, context.GetPlayerSlot().Get());
 }
 
 }  // namespace
@@ -147,10 +156,18 @@ std::string ConnectHistoryPlugin::Localize(const std::string& key,
     return entry->second.begin()->second;
 }
 
-// Ответ команды. Цветовые коды из шаблона в консоли не нужны — снимаем их,
-// иначе в лог сервера уедут управляющие байты.
-void ConnectHistoryPlugin::SendChat(uint64_t steamId, const std::string& message) {
-    (void)steamId;
+// Ответ команды.
+//
+// Игроку — в чат, через EnsureChatColorPrefix: движок CS2 съедает цветовой код,
+// стоящий в самом начале строки, и без этой обёртки "{GREEN}[История] ..."
+// вышло бы белым. Инвариант из CLAUDE.md — в чат только через неё.
+//
+// Консоли (и игроку, до которого не достучались) — тот же текст без цветов:
+// управляющие байты в логе сервера читать невозможно.
+void ConnectHistoryPlugin::SendChat(int slot, const std::string& message) {
+    if (slot >= 0 && chatmsg::SendToSlot(slot, chat::EnsureChatColorPrefix(message))) {
+        return;
+    }
 
     std::string plain;
     plain.reserve(message.size());
@@ -163,7 +180,40 @@ void ConnectHistoryPlugin::SendChat(uint64_t steamId, const std::string& message
     META_CONPRINTF("[ConnectHistory] %s\n", plain.c_str());
 }
 
-void ConnectHistoryPlugin::CommandPlaytime(uint64_t steamId) {
+// Разбор "!playtime" / "/lastseen" из чата.
+//
+// true означает «команда наша» — вызывающий не пускает такое сообщение в общий
+// чат. Всё остальное уходит нетронутым: плагин истории не имеет права глотать
+// чужие сообщения.
+bool ConnectHistoryPlugin::HandleChatCommand(int slot, const char* text) {
+    if (text == nullptr) return false;
+    if (*text != '!' && *text != '/') return false;
+
+    ++text;
+
+    // Берём первое слово: аргументов у этих команд нет, но человек может
+    // дописать что угодно после пробела
+    std::string name;
+    while (*text != '\0' && *text != ' ') {
+        const char c = *text++;
+        name.push_back(static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c));
+    }
+
+    const uint64_t steamId = SteamIdForSlot(slot);
+    if (steamId == 0) return false;
+
+    if (name == "playtime") {
+        CommandPlaytime(steamId, slot);
+        return true;
+    }
+    if (name == "lastseen") {
+        CommandLastSeen(steamId, slot);
+        return true;
+    }
+    return false;
+}
+
+void ConnectHistoryPlugin::CommandPlaytime(uint64_t steamId, int slot) {
     if (!_config.commands.playerCommandsEnabled || !_query) return;
 
     const int64_t now = UtcNowSeconds();
@@ -175,13 +225,13 @@ void ConnectHistoryPlugin::CommandPlaytime(uint64_t steamId) {
     }
 
     const PlayerTotals totals = _query->GetTotals(steamId);
-    const std::string lang = _config.defaultLang;
+    const std::string lang = ClientLanguage(slot);
 
     std::map<std::string, std::string> values;
     values["{prefix}"] = Localize("prefix", lang);
 
     if (!totals.found) {
-        SendChat(steamId, chat::Render(Localize("no_data", lang), values));
+        SendChat(slot, chat::Render(Localize("no_data", lang), values));
         return;
     }
 
@@ -189,25 +239,25 @@ void ConnectHistoryPlugin::CommandPlaytime(uint64_t steamId) {
     values["{SESSIONS}"] = std::to_string(totals.sessions);
     values["{FIRST}"] = FormatDisplayDateTime(totals.firstSeen, _displayOffsetSeconds);
 
-    SendChat(steamId, chat::Render(Localize("playtime", lang), values));
+    SendChat(slot, chat::Render(Localize("playtime", lang), values));
 }
 
-void ConnectHistoryPlugin::CommandLastSeen(uint64_t steamId) {
+void ConnectHistoryPlugin::CommandLastSeen(uint64_t steamId, int slot) {
     if (!_config.commands.playerCommandsEnabled || !_query) return;
 
     const std::vector<RecentSession> sessions =
         _query->GetRecent(steamId, _config.commands.lastSeenLimit);
-    const std::string lang = _config.defaultLang;
+    const std::string lang = ClientLanguage(slot);
 
     std::map<std::string, std::string> values;
     values["{prefix}"] = Localize("prefix", lang);
 
     if (sessions.empty()) {
-        SendChat(steamId, chat::Render(Localize("no_data", lang), values));
+        SendChat(slot, chat::Render(Localize("no_data", lang), values));
         return;
     }
 
-    SendChat(steamId, chat::Render(Localize("lastseen_header", lang), values));
+    SendChat(slot, chat::Render(Localize("lastseen_header", lang), values));
 
     for (const RecentSession& session : sessions) {
         std::map<std::string, std::string> row = values;
@@ -215,7 +265,7 @@ void ConnectHistoryPlugin::CommandLastSeen(uint64_t steamId) {
         row["{DURATION}"] = FormatDuration(session.durationSeconds);
         row["{MAP}"] = session.map;
 
-        SendChat(steamId, chat::Render(Localize("lastseen_row", lang), row));
+        SendChat(slot, chat::Render(Localize("lastseen_row", lang), row));
     }
 }
 

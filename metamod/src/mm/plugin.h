@@ -9,9 +9,11 @@
 // между целями» в docs/DATABASE.md), выгода — плагин не ломается на очередном
 // обновлении игры.
 //
-// Почему цена именно такая. Счёт и пинг живут в полях контроллера, а до
-// контроллера нужен указатель на CGameEntitySystem, добываемый смещением от
-// GameResourceServiceServer. Убийства, смерти, помощь, урон, MVP, раунды и
+// Почему цена именно такая. Счёт живёт в поле контроллера, а до контроллера
+// нужен указатель на CGameEntitySystem, добываемый смещением от
+// GameResourceServiceServer. Пинг раньше числился здесь же — оказалось, его
+// отдаёт IVEngineServer2::GetPlayerNetInfo, обычный фабричный интерфейс, и он
+// теперь собирается. Убийства, смерти, помощь, урон, MVP, раунды и
 // смена команды приходят игровыми событиями, но IGameEventManager2 в CS2
 // не отдаётся ни одной фабрикой: единственный путь к нему — найти vtable
 // класса CGameEventManager по имени в символах server.so или по RTTI
@@ -39,6 +41,9 @@
 #include <string>
 #include <unordered_map>
 
+class CCommand;
+class CCommandContext;
+class ConCommandRef;
 class CPlayerSlot;
 enum ENetworkDisconnectionReason : int;
 
@@ -80,11 +85,21 @@ public:
                                const char* name, uint64 xuid, const char* networkId);
     void Hook_GameFrame(bool simulating, bool firstTick, bool lastTick);
 
+    // Чат игрока. Без игровых событий это единственный способ услышать say:
+    // через ICvar проходят и чат, и консольные команды клиента.
+    void Hook_DispatchConCommand(ConCommandRef command, const CCommandContext& context,
+                                 const CCommand& args);
+
     // Команды (см. commands.cpp)
     void CommandStatus();
     void CommandReload();
-    void CommandPlaytime(uint64_t steamId);
-    void CommandLastSeen(uint64_t steamId);
+    // SteamID игрока в слоте. 0 — слот пуст, бот или игрок уже вышел.
+    uint64_t SteamIdForSlot(int slot) const;
+
+    // slot — кому отвечать. -1 означает «ответ в консоль сервера»: так работает
+    // админский вызов про офлайн-игрока.
+    void CommandPlaytime(uint64_t steamId, int slot);
+    void CommandLastSeen(uint64_t steamId, int slot);
 
     const Config& GetConfig() const { return _config; }
 
@@ -104,8 +119,17 @@ private:
     std::string ReadConVar(const char* name) const;
     int CountHumans() const;
     int MaxPlayers() const;
-    void SendChat(uint64_t steamId, const std::string& message);
+    void SendChat(int slot, const std::string& message);
     std::string Localize(const std::string& key, const std::string& lang) const;
+
+    // Язык клиента из его же cl_language. Пусто -> DefaultLang из конфига.
+    std::string ClientLanguage(int slot) const;
+
+    // Разбирает "!playtime" / "/lastseen" из чата. true — команда наша
+    // и в общий чат уходить не должна.
+    bool HandleChatCommand(int slot, const char* text);
+
+    void SamplePings();
 
     // Что известно про слот между OnClientConnected и ClientPutInServer.
     // Ключуется по слоту сознательно и живёт ровно до открытия сессии: сама
@@ -135,6 +159,7 @@ private:
     int32_t _displayOffsetSeconds = 0;
 
     int64_t _nextSnapshotAt = 0;
+    int64_t _nextPingAt = 0;
     int64_t _registerServerAt = 0;
     bool _serverRegistered = false;
     bool _loaded = false;
