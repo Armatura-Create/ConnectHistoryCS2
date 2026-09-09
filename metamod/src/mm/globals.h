@@ -9,6 +9,7 @@ class IVEngineServer2;
 class ISource2Server;
 class IGameEventSystem;
 class INetworkMessages;
+class ISchemaSystem;
 // Именно ISource2GameClients: IServerGameClients в eiface.h — typedef, и
 // форвард-объявление его классом ломает сборку раньше первой полезной ошибки.
 class ISource2GameClients;
@@ -22,6 +23,18 @@ extern ISource2Server* g_server;
 // сигнатур и смещений для чата не требуется.
 extern IGameEventSystem* g_gameEventSystem;
 extern INetworkMessages* g_networkMessages;
+
+// Схема игры: смещения полей контроллера по именам (см. mm/schema.cpp).
+// Фабричный интерфейс, как и остальные.
+extern ISchemaSystem* g_schemaSystem;
+
+namespace pisex {
+class IUtilsApi;
+}
+
+// Плагин Utils от Pisex, если стоит на сервере. nullptr — нет, и это штатно:
+// без него плагин работает, но итоги матча остаются нулями (см. mm/utils_api.h).
+extern pisex::IUtilsApi* g_utils;
 
 // ICvar своего указателя не имеет специально: интерфейс забирается в g_pCVar
 // из tier1, потому что ConVar_Register (а значит и META_CONVAR_REGISTER)

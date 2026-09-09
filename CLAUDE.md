@@ -67,29 +67,38 @@ deliberate exception — it is the Russian translation of the user-facing README
 ## Target `metamod/` — native C++
 
 - C++17. The core in `src/core` **knows nothing about hl2sdk or MySQL**.
-- **No signatures, no offsets, no vtable lookups.** Everything needed comes from Metamod
-  hooks and engine interfaces obtained by factory. The payoff is a plugin that does not
-  break on a game update; the price is that this target collects **no match results at
-  all** — see `docs/DATABASE.md`.
-- **There are no game events in this target, and adding them is not a small change.**
-  No factory in CS2 hands out `IGameEventManager2`; the only route is to find the
-  `CGameEventManager` vtable by symbol name in `server.so` or by RTTI in `server.dll`
-  (this is what CS2Fixes does) and hook that. Nothing in CI can verify such an address,
-  and a wrong one kills the server on load rather than failing a build. So `kills`,
-  `deaths`, `assists`, `damage`, `mvp`, `rounds_played`, `team_*` and `spectator_seconds`
-  stay `0`, and `score` stays `NULL` (that one would additionally need a
-  `CGameEntitySystem` pointer obtained by offset). If you ever add the vtable lookup,
-  it changes what this target promises — update this section, `docs/DATABASE.md` and
-  the header comment of `src/mm/plugin.h` together.
-- **Chat and ping need no offsets, contrary to what this file used to say.** The reply
-  goes out as a `CUserMessageSayText2` allocated by `INetworkMessageInternal` and posted
-  through `IGameEventSystem`; the chat is heard by hooking `ICvar::DispatchConCommand`
-  (`say` / `say_team`); `ping_*` comes from `IVEngineServer2::GetPlayerNetInfo` →
-  `INetChannelInfo::GetAvgLatency`. Every one of those is a factory interface. The
-  UserMessage lives alone in `src/mm/chat.cpp`. Ping is sampled **only** from
-  `Hook_GameFrame` — `INetChannelInfo` is engine memory, and reading it from the
-  background thread is reading someone else's memory.
-- **Only our own chat commands are swallowed** (`MRES_SUPERCEDE`). A history plugin that
+- **No signatures, no offsets, no vtable lookups — in this plugin.** Everything it does
+  by itself comes from Metamod hooks and engine interfaces obtained by factory, so a game
+  update does not break it. Connection history, ping, chat and commands need nothing else.
+- **Match results come through the Utils plugin by Pisex** (`https://github.com/Pisex/cs2-menus`,
+  interface `"IUtilsApi"`, looked up in `AllPluginsLoaded`). The controller's fields
+  (`m_iScore`, `m_iMVPs`, `m_iTeamNum`, `m_pActionTrackingServices->m_matchStats`) are read
+  at disconnect on the main thread, exactly like C# `StatsCollector`; `round_end` and
+  `player_team` are the only events hooked. The pointer to the entity system needs gamedata
+  that no factory provides; Utils owns it for a whole family of plugins, so ConnectHistory
+  borrows it instead of maintaining a second copy. The dependency is **optional** — without
+  Utils those columns stay `0`/`NULL` and the console says so once.
+- **`src/mm/utils_api.h` mirrors a foreign vtable.** It must repeat `include/menus.h` from
+  cs2-menus method by method up to `ClearAllHooks`, and must have no virtual destructor —
+  the original has none, and adding one shifts every entry by one. Re-check it when bumping
+  the documented Utils version.
+- **Field offsets are asked from `ISchemaSystem` by name** (`src/mm/schema.cpp`), walking
+  single-inheritance bases. That is the game's own schema, not gamedata: a game update
+  moves a field and the engine answers with the new number.
+- **Hooks are KHook, not SourceHook.** Metamod:Source removed SourceHook on 2026-09-08
+  (`a12f3cd5`) and bumped the plugin API to 18 (`0cc4e200`), so this target needs
+  Metamod:Source **2.0.0-git1460 or newer** and does not load on older builds. Hooks are
+  `KHook::Virtual<>` members bound to methods in the constructor and attached in `Load`
+  (`Add`) / detached in `Unload` (`Remove`); handlers return `KHook::Return<T>` with
+  `Action::Ignore` or `Action::Supersede`.
+- **Chat and ping need no offsets.** The reply goes out as a `CUserMessageSayText2`
+  allocated by `INetworkMessageInternal` and posted through `IGameEventSystem`; the chat is
+  heard by hooking `ICvar::DispatchConCommand` (`say` / `say_team`); `ping_*` comes from
+  `IVEngineServer2::GetPlayerNetInfo` → `INetChannelInfo::GetAvgLatency`. The UserMessage
+  lives alone in `src/mm/chat.cpp`. Ping is sampled **only** from `Hook_GameFrame` —
+  `INetChannelInfo` is engine memory, and reading it from the background thread is reading
+  someone else's memory.
+- **Only our own chat commands are swallowed** (`Action::Supersede`). A history plugin that
   eats every `say` breaks the chat plugins installed next to it, and nothing would point
   at us as the cause.
 - **`.mmdb` is opened from memory only** (`ch_mmdb_open_memory`): `libmaxminddb` offers

@@ -174,32 +174,28 @@ not collect them.
 | Column | CounterStrikeSharp | SwiftlyS2 | Metamod (native) |
 |---|---|---|---|
 | connection history: `started_at`, `ended_at`, `duration_seconds`, `end_kind`, `ip`, `country_iso`, maps, nicknames | yes | yes | yes |
-| `kills`, `deaths`, `assists`, `headshots`, `damage`, `mvp`, `rounds_played` | yes | yes | **always `0`** |
-| `team_final`, `team_changes` | yes | yes | **always `0`** |
-| `spectator_seconds` | yes | yes | **always `0`** |
-| `score` | yes | yes | **always `NULL`** |
 | `ping_avg`, `ping_min`, `ping_max`, `ping_samples` | yes | yes | yes |
+| `kills`, `deaths`, `assists`, `headshots`, `damage`, `mvp`, `score` | yes | yes | yes **with Utils**, otherwise `0` / `NULL` |
+| `rounds_played`, `team_final`, `team_changes`, `spectator_seconds` | yes | yes | yes **with Utils**, otherwise `0` |
 | `ch_online_snapshots.bots` | yes | yes | **always `0`** |
 
-**Why the native target fills in no match results.** Two different walls, both made
-of the same brick — an address that has to be guessed.
+**"With Utils"** means the [Utils plugin by Pisex](https://github.com/Pisex/cs2-menus) is installed next to
+ConnectHistory — the plugin that `cs2-lvl_ranks`, `cs2-vip` and the rest of that family
+already depend on. It is optional: ConnectHistory finds it in `AllPluginsLoaded` and says
+in the console whether it did.
 
-*Score* lives only in the player controller's fields, and reaching the controller
-requires a pointer to `CGameEntitySystem` obtained by an offset from
-`GameResourceServiceServer`. (Ping used to be listed here too; it turned out to be
-reachable through `IVEngineServer2::GetPlayerNetInfo`, a factory interface, and is
-now collected.)
+**Why the dependency exists.** Score and match statistics live in the player controller's
+fields, and the pointer to the entity system that holds the controller is handed out by
+no engine factory — it has to come from gamedata. Game events (`round_end`,
+`player_team`) are behind the same wall: `IGameEventManager2` is not reachable through a
+factory either. ConnectHistory itself promises to carry no signature and no offset, so it
+does not solve this twice: Utils already owns that gamedata for a whole ecosystem of
+plugins, and ConnectHistory borrows the pointer and the events from it. The field offsets
+themselves are not gamedata at all — they are asked from the game's own `ISchemaSystem`
+by name at runtime.
 
-*Kills, deaths, assists, damage, MVP, rounds and team changes* arrive as game events,
-but no factory in CS2 hands out `IGameEventManager2`. The only route to it is to
-locate the `CGameEventManager` vtable — by symbol name in `server.so`, by RTTI in
-`server.dll` — and hook that. Both are reads through an address nothing in CI can
-verify, and a wrong one takes the server down on load rather than failing a build.
-
-That price buys nothing the plugin exists for. Joins, leaves, durations, maps,
-countries, "who is online right now" and the crash map all come from Metamod hooks
-and engine interfaces obtained by factory, with no offset anywhere. The two C#
-targets run inside a host that already paid this cost, so they keep the extras.
+Connection history, ping and "who is online right now" never depended on any of this and
+work identically with or without Utils.
 
 **Reading across mixed servers.** Filter ping with `WHERE ping_samples IS NOT NULL`
 rather than `> 0`. For match results, exclude native servers by `server_id` — a zero

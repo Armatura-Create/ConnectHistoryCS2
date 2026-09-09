@@ -10,7 +10,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![CounterStrikeSharp](https://img.shields.io/badge/CounterStrikeSharp-%E2%89%A5%201.0.369-1f6feb?logo=steam)](https://github.com/roflmuffin/CounterStrikeSharp)
 [![SwiftlyS2](https://img.shields.io/badge/SwiftlyS2-%E2%89%A5%201.4.9-8957e5)](https://github.com/swiftly-solution/swiftlys2)
-[![Metamod:Source](https://img.shields.io/badge/Metamod%3ASource-%E2%89%A5%202.0.0--git1322-f0883e)](https://www.sourcemm.net/downloads.php?branch=master)
+[![Metamod:Source](https://img.shields.io/badge/Metamod%3ASource-%E2%89%A5%202.0.0--git1460-f0883e)](https://www.sourcemm.net/downloads.php?branch=master)
 [![MySQL](https://img.shields.io/badge/MySQL-5.7%20%7C%208.0%2B-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![Platforms](https://img.shields.io/badge/Platforms-Linux%20%7C%20Windows-2ea44f)](#установка)
 [![GeoLite2](https://img.shields.io/badge/GeoLite2-в%20архиве%20%2F%20авто--обновление-009688)](#сборка)
@@ -29,11 +29,14 @@
 |---|---|---|---|
 | **CounterStrikeSharp** | CSSharp ≥ 1.0.369 (значит, и Metamod:Source) | `ConnectHistory_cssharp_<версия>.zip` | `addons/counterstrikesharp/plugins/ConnectHistory/` |
 | **SwiftlyS2** | SwiftlyS2 ≥ 1.4.9, Metamod **не нужен** | `ConnectHistory_swiftly_<версия>.zip` | `addons/swiftlys2/plugins/ConnectHistory/` |
-| **Metamod:Source** | Metamod:Source ≥ 2.0.0-git1322, больше ничего | `ConnectHistory_metamod_{linux,windows}_<версия>.zip` | `addons/ConnectHistory/` |
+| **Metamod:Source** | Metamod:Source ≥ 2.0.0-git1460; для итогов матча нужен [Utils от Pisex](https://github.com/Pisex/cs2-menus) | `ConnectHistory_metamod_{linux,windows}_<версия>.zip` | `addons/ConnectHistory/` |
 
-Нативная цель пишет историю подключений полностью, но не собирает игровые
-итоги — чего именно нет и почему, написано в
-[«Расхождения между целями»](docs/DATABASE.md#differences-between-targets).
+Историю подключений и пинг нативная цель пишет сама. Итоги матча (убийства, смерти,
+счёт, раунды, команда) берутся с контроллера игрока, а указатель до него живёт
+в [плагине Utils от Pisex](https://github.com/Pisex/cs2-menus) — том самом, которым пользуются `cs2-lvl_ranks`,
+`cs2-vip` и остальные плагины этого семейства. С ним нативная цель собирает всё,
+что и C#-цели; без него эти колонки остаются `0`/`NULL`. Подробности —
+в [«Расхождениях между целями»](docs/DATABASE.md#differences-between-targets).
 
 ## Возможности
 

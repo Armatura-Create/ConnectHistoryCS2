@@ -585,8 +585,8 @@ jobs:
             echo "|---|---|"
             echo "| \`ConnectHistory_cssharp_${PLUGIN_VERSION}.zip\` | CounterStrikeSharp >= 1.0.369 (hence Metamod:Source) |"
             echo "| \`ConnectHistory_swiftly_${PLUGIN_VERSION}.zip\` | SwiftlyS2 >= 1.4.9, Metamod not needed |"
-            echo "| \`ConnectHistory_metamod_linux_${PLUGIN_VERSION}.zip\` | Metamod:Source >= 2.0.0-git1322, Linux |"
-            echo "| \`ConnectHistory_metamod_windows_${PLUGIN_VERSION}.zip\` | Metamod:Source >= 2.0.0-git1322, Windows |"
+            echo "| \`ConnectHistory_metamod_linux_${PLUGIN_VERSION}.zip\` | Metamod:Source >= 2.0.0-git1460, Linux |"
+            echo "| \`ConnectHistory_metamod_windows_${PLUGIN_VERSION}.zip\` | Metamod:Source >= 2.0.0-git1460, Windows |"
             echo
             echo "Extract into the root of your game server. Settings live in:"
             echo

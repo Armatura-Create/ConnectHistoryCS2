@@ -3,24 +3,20 @@
 // Здесь и только здесь живут обращения к движку. Всё остальное — в src/core,
 // которое про SDK ничего не знает и потому проверяется тестами на любой машине.
 //
-// Осознанное ограничение: НИКАКИХ сигнатур, смещений и резолва vtable по RTTI.
-// Всё нужное доступно через хуки Metamod и интерфейсы движка, полученные
-// фабрикой. Цена — итоги матча в этой цели не заполняются (см. «расхождения
-// между целями» в docs/DATABASE.md), выгода — плагин не ломается на очередном
+// Осознанное ограничение: В ЭТОМ ПЛАГИНЕ нет ни сигнатур, ни смещений, ни
+// резолва vtable по RTTI. Всё, что он делает сам, идёт через хуки Metamod и
+// интерфейсы движка, полученные фабрикой, — и потому не ломается на очередном
 // обновлении игры.
 //
-// Почему цена именно такая. Счёт живёт в поле контроллера, а до контроллера
-// нужен указатель на CGameEntitySystem, добываемый смещением от
-// GameResourceServiceServer. Пинг раньше числился здесь же — оказалось, его
-// отдаёт IVEngineServer2::GetPlayerNetInfo, обычный фабричный интерфейс, и он
-// теперь собирается. Убийства, смерти, помощь, урон, MVP, раунды и
-// смена команды приходят игровыми событиями, но IGameEventManager2 в CS2
-// не отдаётся ни одной фабрикой: единственный путь к нему — найти vtable
-// класса CGameEventManager по имени в символах server.so или по RTTI
-// в server.dll. И то, и другое — чтение чужой памяти по угаданному адресу,
-// которое нечем проверить в CI и которое роняет сервер, если ошиблось.
-// История подключений — то, ради чего плагин существует, — от этого
-// не зависит: вход, выход, время, карта, страна и «кто сейчас онлайн»
+// Итоги матча — единственное, чему это правило мешало: счёт и статистика
+// живут в полях контроллера, а до контроллера нужен указатель на CEntitySystem,
+// которого ни одна фабрика не отдаёт. Его (и игровые события) плагин берёт
+// у Utils от Pisex — см. mm/utils_api.h. Смещение живёт там, а не здесь; без
+// Utils плагин работает как прежде, только итоги остаются нулями. Сами поля
+// читаются по именам через ISchemaSystem — это схема игры, не gamedata.
+//
+// История подключений — то, ради чего плагин существует, — ни от чего из этого
+// не зависит: вход, выход, время, карта, страна, пинг и «кто сейчас онлайн»
 // берутся из хуков и работают без единого смещения.
 #pragma once
 
@@ -33,6 +29,10 @@
 
 #include <cstdint>
 #include <ISmmPlugin.h>
+// Полные типы нужны KHook::Virtual: индекс в vtable считается из указателя
+// на метод, а для этого класс должен быть определён, не объявлен.
+#include <eiface.h>
+#include <icvar.h>
 #include <memory>
 // uint64 SDK - это unsigned long long, а uint64_t на Linux - unsigned long.
 // Разные типы: сигнатуры хуков обязаны повторять SDK дословно, иначе делегат
@@ -41,15 +41,11 @@
 #include <string>
 #include <unordered_map>
 
-class CCommand;
-class CCommandContext;
-class ConCommandRef;
-class CPlayerSlot;
-enum ENetworkDisconnectionReason : int;
+class IGameEvent;
 
-// g_SMAPI, g_PLAPI, g_PLID, g_SHPtr. Объявить их обязан КАЖДЫЙ файл цели:
-// META_CONPRINTF и SH_ADD_HOOK — это макросы поверх этих указателей, а
-// определяет их PLUGIN_EXPOSE ровно один раз, в самом низу plugin.cpp.
+// g_SMAPI, g_PLAPI, g_PLID и указатель KHook. Объявить их обязан КАЖДЫЙ файл
+// цели: META_CONPRINTF и хуки KHook — макросы и шаблоны поверх этих указателей,
+// а определяет их PLUGIN_EXPOSE ровно один раз, в самом низу plugin.cpp.
 PLUGIN_GLOBALVARS();
 
 namespace ch {
@@ -58,8 +54,17 @@ class ConsoleLogger;
 
 class ConnectHistoryPlugin final : public ISmmPlugin, public IMetamodListener {
 public:
+    // Хуки KHook привязываются к методам в конструкторе: индекс vtable
+    // вычисляется из указателя на член и не трогает движок, поэтому
+    // это безопасно даже для глобального объекта со статической инициализацией.
+    // К самому движку хуки цепляются в Load (Add) и отцепляются в Unload (Remove).
+    ConnectHistoryPlugin();
+
     bool Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool late) override;
     bool Unload(char* error, size_t maxlen) override;
+
+    // Здесь ищем Utils: другие плагины гарантированно загружены только тут.
+    void AllPluginsLoaded() override;
 
     const char* GetAuthor() override { return "Armatura"; }
     const char* GetName() override { return "ConnectHistory"; }
@@ -77,18 +82,31 @@ public:
                      const char* landmarkName, bool loadGame, bool background) override;
     void OnLevelShutdown() override;
 
-    // Хуки Metamod
-    void Hook_OnClientConnected(CPlayerSlot slot, const char* name, uint64 xuid,
-                                const char* networkId, const char* address, bool fake);
-    void Hook_ClientPutInServer(CPlayerSlot slot, char const* name, int type, uint64 xuid);
-    void Hook_ClientDisconnect(CPlayerSlot slot, ENetworkDisconnectionReason reason,
-                               const char* name, uint64 xuid, const char* networkId);
-    void Hook_GameFrame(bool simulating, bool firstTick, bool lastTick);
+    // Хуки движка (KHook). Первый аргумент — объект, чей метод перехвачен;
+    // нам он не нужен, но так устроена сигнатура колбэка.
+    KHook::Return<void> Hook_OnClientConnected(IServerGameClients*, CPlayerSlot slot,
+                                               const char* name, uint64 xuid,
+                                               const char* networkId, const char* address,
+                                               bool fake);
+    KHook::Return<void> Hook_ClientPutInServer(IServerGameClients*, CPlayerSlot slot,
+                                               char const* name, int type, uint64 xuid);
+    KHook::Return<void> Hook_ClientDisconnect(IServerGameClients*, CPlayerSlot slot,
+                                              ENetworkDisconnectionReason reason,
+                                              const char* name, uint64 xuid,
+                                              const char* networkId);
+    KHook::Return<void> Hook_GameFrame(IServerGameDLL*, bool simulating, bool firstTick,
+                                       bool lastTick);
 
-    // Чат игрока. Без игровых событий это единственный способ услышать say:
-    // через ICvar проходят и чат, и консольные команды клиента.
-    void Hook_DispatchConCommand(ConCommandRef command, const CCommandContext& context,
-                                 const CCommand& args);
+    // Чат игрока. Через ICvar проходят и say, и консольные команды клиента —
+    // это единственная точка, где чат слышен без игровых событий.
+    KHook::Return<void> Hook_DispatchConCommand(ICvar*, ConCommandRef command,
+                                                const CCommandContext& context,
+                                                const CCommand& args);
+
+    // Игровые события от Utils (см. AllPluginsLoaded). Только те два, что
+    // нельзя снять с контроллера при выходе: раунды и смена команды.
+    void OnRoundEnd();
+    void OnPlayerTeam(IGameEvent* event);
 
     // Команды (см. commands.cpp)
     void CommandStatus();
@@ -112,8 +130,11 @@ private:
     void RegisterServer();
     void TakeOnlineSnapshot();
     void OpenSessionFor(int slot, uint64_t steamId, const char* name);
+    // slot — где сейчас сидит игрок, чтобы снять итоги с контроллера;
+    // -1, если слота уже нет (сессия закрывается не из хука отключения).
     void CloseSession(OpenSession session, SessionEndKind kind, int reason,
-                      const std::string& reasonName);
+                      const std::string& reasonName, int slot = -1);
+    int SlotForSteamId(uint64_t steamId) const;
     void CloseAllSessions(SessionEndKind kind);
     std::string CurrentMap() const;
     std::string ReadConVar(const char* name) const;
@@ -139,6 +160,18 @@ private:
         std::string ip;
         bool fake = false;
     };
+
+    KHook::Virtual<IServerGameDLL, void, bool, bool, bool> _hookGameFrame;
+    KHook::Virtual<IServerGameClients, void, CPlayerSlot, const char*, uint64, const char*,
+                   const char*, bool>
+        _hookOnClientConnected;
+    KHook::Virtual<IServerGameClients, void, CPlayerSlot, char const*, int, uint64>
+        _hookClientPutInServer;
+    KHook::Virtual<IServerGameClients, void, CPlayerSlot, ENetworkDisconnectionReason,
+                   const char*, uint64, const char*>
+        _hookClientDisconnect;
+    KHook::Virtual<ICvar, void, ConCommandRef, const CCommandContext&, const CCommand&>
+        _hookDispatchConCommand;
 
     Config _config;
     std::unique_ptr<ConsoleLogger> _logger;

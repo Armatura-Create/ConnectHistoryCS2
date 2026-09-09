@@ -481,7 +481,10 @@ const char *PLUGIN_FULL_VERSION   = \"{version}\";
     cxx.cxxincludes += [
       os.path.join(context.currentSourcePath),
       os.path.join(mms_core_path),
-      os.path.join(mms_core_path, 'sourcehook'),
+      # Metamod:Source replaced SourceHook with KHook (a12f3cd5, 2026-09-08).
+      # The plugin side is header-only; the detour engine lives in metamod itself
+      # and is reached through ISmmAPI::GetDetourInterface.
+      os.path.join(self.mms_root, 'third_party', 'khook', 'include'),
     ]
 
     for other_sdk in self.sdk_manifests:
