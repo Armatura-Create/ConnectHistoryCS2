@@ -461,6 +461,21 @@ jobs:
               *'\'*) echo "::error::в VDF архива $slug обратные слэши"; exit 1 ;;
             esac
 
+            # Плагин обязан представляться серверу версией из тега. CI штампует
+            # её в src/mm/version.h; если шаг не сработал, в бинарнике останется
+            # фолбэк 0.0.0-dev, и meta list покажет его вместо номера. Ищем
+            # неанкерно (grep -a -F): литерал может лечь вплотную к чужим байтам.
+            unzip -p "$ZIP" "$binary" > plugin.bin
+            if ! grep -a -q -F "$PLUGIN_VERSION" plugin.bin; then
+              echo "::error::в $binary архива $slug нет версии $PLUGIN_VERSION"
+              exit 1
+            fi
+            if grep -a -q -F "0.0.0-dev" plugin.bin; then
+              echo "::error::в $binary архива $slug остался фолбэк 0.0.0-dev"
+              exit 1
+            fi
+            rm -f plugin.bin
+
             # Шаблон конфига едет в релиз намеренно, но ТОЛЬКО с пустым паролем
             if unzip -p "$ZIP" addons/configs/ConnectHistory/Settings.json \
                | grep -qE '"Password"[[:space:]]*:[[:space:]]*"[^"]+"'; then
