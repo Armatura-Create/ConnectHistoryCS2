@@ -44,9 +44,15 @@ dump-defaults: $(DUMPER)
 $(DUMPER): $(OUT)/tools/dump_defaults.o $(CORE_OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
+# -MMD -MP: объект зависит от заголовков, которые включает. Без этого правка
+# config.h пересобирала только .cpp, изменённые руками, а dump_defaults.o
+# оставался с прежней раскладкой ch::Config и падал по SIGSEGV на возврате
+# структуры по значению - при зелёных тестах.
 $(OUT)/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -MMD -MP -c $< -o $@
+
+-include $(OBJ:.o=.d) $(OUT)/tools/dump_defaults.d
 
 $(OUT)/%.o: %.c
 	@mkdir -p $(dir $@)
