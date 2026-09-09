@@ -5,6 +5,7 @@
 #include "mm/schema.h"
 #include "mm/utils_api.h"
 
+#include <entity2/entityidentity.h>
 #include <entity2/entitysystem.h>
 
 #include <cstdint>
@@ -57,6 +58,23 @@ const Offsets& Resolve() {
     return offsets;
 }
 
+// Поиск сущности по индексу — дословно CEntitySystem::GetEntityIdentity из
+// entity2/entitysystem.cpp. Своя копия не от хорошей жизни: тот файл в плагин
+// не компилируется, на Windows символ не находится, а тянуть ради одной
+// функции ещё один исходник SDK со всеми его зависимостями — дороже.
+// Здесь только публичные поля заголовка, никакой gamedata.
+CEntityIdentity* FindIdentity(CEntitySystem* entities, int index) {
+    if (index < 0 || index >= (MAX_TOTAL_ENTITIES) - 1) return nullptr;
+
+    CEntityIdentity* chunk = entities->m_EntityList.m_pIdentityChunks[index / MAX_ENTITIES_IN_LIST];
+    if (chunk == nullptr) return nullptr;
+
+    CEntityIdentity* identity = &chunk[index % MAX_ENTITIES_IN_LIST];
+    if (identity->GetEntityIndex() != CEntityIndex(index)) return nullptr;
+
+    return identity;
+}
+
 int32_t ReadInt(const void* object, int32_t offset) {
     return *reinterpret_cast<const int32_t*>(static_cast<const uint8_t*>(object) + offset);
 }
@@ -77,7 +95,9 @@ bool ReadController(int slot, MatchStats* out) {
 
     // Контроллер игрока — сущность с индексом slot + 1; так его находят
     // и CounterStrikeSharp, и плагины Pisex
-    const CEntityInstance* controller = entities->GetEntityInstance(CEntityIndex(slot + 1));
+    CEntityIdentity* identity = FindIdentity(entities, slot + 1);
+    const CEntityInstance* controller =
+        identity != nullptr ? entities->GetEntityInstance(identity) : nullptr;
     if (controller == nullptr) return false;
 
     const Offsets& off = Resolve();
