@@ -175,27 +175,27 @@ not collect them.
 |---|---|---|---|
 | connection history: `started_at`, `ended_at`, `duration_seconds`, `end_kind`, `ip`, `country_iso`, maps, nicknames | yes | yes | yes |
 | `ping_avg`, `ping_min`, `ping_max`, `ping_samples` | yes | yes | yes |
-| `kills`, `deaths`, `assists`, `headshots`, `damage`, `mvp`, `score` | yes | yes | yes **with Utils**, otherwise `0` / `NULL` |
-| `rounds_played`, `team_final`, `team_changes`, `spectator_seconds` | yes | yes | yes **with Utils**, otherwise `0` |
+| `kills`, `deaths`, `assists`, `headshots`, `damage`, `mvp`, `score` | yes | yes | yes (needs a valid `gamedata.json`, otherwise `0` / `NULL`) |
+| `rounds_played`, `team_final`, `team_changes`, `spectator_seconds` | yes | yes | yes (same condition, otherwise `0`) |
 | `ch_online_snapshots.bots` | yes | yes | **always `0`** |
 
-**"With Utils"** means the [Utils plugin by Pisex](https://github.com/Pisex/cs2-menus) is installed next to
-ConnectHistory — the plugin that `cs2-lvl_ranks`, `cs2-vip` and the rest of that family
-already depend on. It is optional: ConnectHistory finds it in `AllPluginsLoaded` and says
-in the console whether it did.
+**The one game-version-dependent number.** Score and match statistics live in the
+player controller's fields. The field offsets themselves are not gamedata — the native
+target asks them from the game's own `ISchemaSystem` by name at runtime. What no engine
+factory hands out is the pointer to the entity system that holds the controllers: it sits
+inside `IGameResourceService` at an offset Valve may move with any update. That offset is
+the only such number in the plugin. It lives in `gamedata.json` next to `Settings.json`
+(defaults: Linux 80, Windows 88 — the `GameEntitySystem` key of CS2Fixes gamedata), the
+plugin never overwrites it, and after an update that moves it the owner pastes the new
+value and restarts. The plugin checks the pointer against entity 0 (worldspawn) before
+trusting it and says in the console when it does not add up.
 
-**Why the dependency exists.** Score and match statistics live in the player controller's
-fields, and the pointer to the entity system that holds the controller is handed out by
-no engine factory — it has to come from gamedata. Game events (`round_end`,
-`player_team`) are behind the same wall: `IGameEventManager2` is not reachable through a
-factory either. ConnectHistory itself promises to carry no signature and no offset, so it
-does not solve this twice: Utils already owns that gamedata for a whole ecosystem of
-plugins, and ConnectHistory borrows the pointer and the events from it. The field offsets
-themselves are not gamedata at all — they are asked from the game's own `ISchemaSystem`
-by name at runtime.
+Rounds and team changes need no game events: rounds are the delta of the game's own
+`m_totalRoundsPlayed` counter, team is polled from the controller once a second — which
+is also the precision of `spectator_seconds` here.
 
 Connection history, ping and "who is online right now" never depended on any of this and
-work identically with or without Utils.
+work identically whether or not the offset is right.
 
 **Reading across mixed servers.** Filter ping with `WHERE ping_samples IS NOT NULL`
 rather than `> 0`. For match results, exclude native servers by `server_id` — a zero

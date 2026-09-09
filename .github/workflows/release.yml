@@ -439,6 +439,7 @@ jobs:
               "addons/metamod/ConnectHistory.vdf" \
               "addons/configs/ConnectHistory/Settings.json" \
               "addons/configs/ConnectHistory/Messages.json" \
+              "addons/configs/ConnectHistory/gamedata.json" \
               "addons/ConnectHistory/GeoLite2-Country.mmdb" \
               "addons/ConnectHistory/GeoLite2-City.mmdb"
             do

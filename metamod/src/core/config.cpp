@@ -398,6 +398,31 @@ Config ConfigService::LoadOrCreate(const std::string& configDirectory) {
         }
     }
 
+    // gamedata.json: создаётся, если нет; читается; НИКОГДА не перезаписывается —
+    // это файл, который владелец правит после обновления игры
+    const std::string gamedataPath = Join(configDirectory, "gamedata.json");
+    if (!FileExists(gamedataPath) && !WriteWholeFile(gamedataPath, DefaultGamedataJson()) &&
+        _logger != nullptr) {
+        _logger->Error("[Config] не удалось записать " + gamedataPath);
+    }
+
+    std::string gamedataRaw;
+    if (ReadWholeFile(gamedataPath, &gamedataRaw)) {
+        json parsed = json::parse(StripJsonExtras(gamedataRaw), nullptr, false);
+        if (parsed.is_discarded()) {
+            _failedFiles.push_back("gamedata.json");
+            if (_logger != nullptr) {
+                _logger->Error("[Config] gamedata.json разобрать не удалось — итоги матча "
+                               "останутся нулями. Файл НЕ перезаписан");
+            }
+        } else {
+            const json empty = json::object();
+            const json& entitySystem = Section(parsed, "GameEntitySystem", empty);
+            Read(entitySystem, "linux", &config.gamedata.entitySystemOffsetLinux);
+            Read(entitySystem, "windows", &config.gamedata.entitySystemOffsetWindows);
+        }
+    }
+
     Validate(config, configDirectory);
     return config;
 }

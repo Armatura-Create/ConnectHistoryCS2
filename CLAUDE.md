@@ -70,18 +70,22 @@ deliberate exception — it is the Russian translation of the user-facing README
 - **No signatures, no offsets, no vtable lookups — in this plugin.** Everything it does
   by itself comes from Metamod hooks and engine interfaces obtained by factory, so a game
   update does not break it. Connection history, ping, chat and commands need nothing else.
-- **Match results come through the Utils plugin by Pisex** (`https://github.com/Pisex/cs2-menus`,
-  interface `"IUtilsApi"`, looked up in `AllPluginsLoaded`). The controller's fields
-  (`m_iScore`, `m_iMVPs`, `m_iTeamNum`, `m_pActionTrackingServices->m_matchStats`) are read
-  at disconnect on the main thread, exactly like C# `StatsCollector`; `round_end` and
-  `player_team` are the only events hooked. The pointer to the entity system needs gamedata
-  that no factory provides; Utils owns it for a whole family of plugins, so ConnectHistory
-  borrows it instead of maintaining a second copy. The dependency is **optional** — without
-  Utils those columns stay `0`/`NULL` and the console says so once.
-- **`src/mm/utils_api.h` mirrors a foreign vtable.** It must repeat `include/menus.h` from
-  cs2-menus method by method up to `ClearAllHooks`, and must have no virtual destructor —
-  the original has none, and adding one shifts every entry by one. Re-check it when bumping
-  the documented Utils version.
+- **Exactly one game-version-dependent number lives in this target: the entity-system
+  offset in `gamedata.json`.** The pointer to `CEntitySystem` sits inside the factory
+  interface `IGameResourceService` at an offset no engine API reveals (defaults Linux 80 /
+  Windows 88 — CS2Fixes gamedata, key `GameEntitySystem`). `ConfigService` creates the file
+  and **never overwrites it**: the owner edits it after a CS2 update, without a rebuild.
+  `stats::EntitySystem()` checks the pointer against entity 0 before trusting it and
+  reports a wrong offset once per map. That is the honest limit of the check — the first
+  read through a garbage pointer cannot be guarded, which is the price every native
+  plugin with gamedata pays.
+- **Match results are read from the controller, not from events** (`src/mm/stats.cpp`):
+  `m_iScore`, `m_iMVPs`, `m_iTeamNum`, `m_pActionTrackingServices->m_matchStats` at
+  disconnect on the main thread — the same fields, at the same moment, as C#
+  `StatsCollector`. No `IGameEventManager2` is needed: rounds are the delta of
+  `CCSGameRules::m_totalRoundsPlayed` (via the `cs_gamerules` proxy), team is polled once a
+  second, and `OpenSession::NoteTeam` already ignores a repeated team, so polling does
+  not inflate `team_changes`.
 - **Field offsets are asked from `ISchemaSystem` by name** (`src/mm/schema.cpp`), walking
   single-inheritance bases. That is the game's own schema, not gamedata: a game update
   moves a field and the engine answers with the new number.

@@ -29,13 +29,15 @@
 |---|---|---|---|
 | **CounterStrikeSharp** | CSSharp ≥ 1.0.369 (значит, и Metamod:Source) | `ConnectHistory_cssharp_<версия>.zip` | `addons/counterstrikesharp/plugins/ConnectHistory/` |
 | **SwiftlyS2** | SwiftlyS2 ≥ 1.4.9, Metamod **не нужен** | `ConnectHistory_swiftly_<версия>.zip` | `addons/swiftlys2/plugins/ConnectHistory/` |
-| **Metamod:Source** | Metamod:Source ≥ 2.0.0-git1460; для итогов матча нужен [Utils от Pisex](https://github.com/Pisex/cs2-menus) | `ConnectHistory_metamod_{linux,windows}_<версия>.zip` | `addons/ConnectHistory/` |
+| **Metamod:Source** | Metamod:Source ≥ 2.0.0-git1460, больше ничего | `ConnectHistory_metamod_{linux,windows}_<версия>.zip` | `addons/ConnectHistory/` |
 
-Историю подключений и пинг нативная цель пишет сама. Итоги матча (убийства, смерти,
-счёт, раунды, команда) берутся с контроллера игрока, а указатель до него живёт
-в [плагине Utils от Pisex](https://github.com/Pisex/cs2-menus) — том самом, которым пользуются `cs2-lvl_ranks`,
-`cs2-vip` и остальные плагины этого семейства. С ним нативная цель собирает всё,
-что и C#-цели; без него эти колонки остаются `0`/`NULL`. Подробности —
+Нативная цель собирает всё то же, что и C#-цели, и никаких других плагинов не требует.
+Итоги матча читаются с контроллера игрока, а чтобы до него добраться, нужно ровно
+**одно** число, зависящее от версии игры, — смещение системы сущностей внутри
+`IGameResourceService`. Оно лежит в `gamedata.json` рядом с остальными конфигами,
+плагином никогда не перезаписывается и правится без пересборки, когда обновление CS2
+его сдвинет (свежее значение — в gamedata CS2Fixes, ключ `GameEntitySystem`). Больше
+ничего в плагине от версии игры не зависит. Подробности —
 в [«Расхождениях между целями»](docs/DATABASE.md#differences-between-targets).
 
 ## Возможности
@@ -147,6 +149,7 @@ addons/ConnectHistory/
 | `Messages.json` | тексты игроцких команд по языкам |
 | `*.schema.json` | JSON Schema, перезаписывается при каждой загрузке |
 | `README.txt` | короткая справка, перезаписывается при каждой загрузке |
+| `gamedata.json` | только нативная цель: единственное смещение, зависящее от версии игры; никогда не перезаписывается |
 
 Основное:
 

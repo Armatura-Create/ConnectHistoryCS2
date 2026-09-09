@@ -72,6 +72,22 @@ struct CommandsSettings {
     int32_t lastSeenLimit = 5;
 };
 
+// Единственные числа в плагине, зависящие от версии игры.
+//
+// Движок не отдаёт указатель на систему сущностей ни через один интерфейс:
+// он лежит внутри IGameResourceService по смещению, которое Valve вправе
+// сдвинуть любым обновлением. Без него не прочитать поля контроллера — а там
+// живут счёт, убийства, смерти, команда. Всё остальное в плагине смещений
+// не знает и от обновлений игры не зависит.
+//
+// Файл gamedata.json создаётся при первом запуске и НИКОГДА не перезаписывается:
+// когда смещение уедет, владелец сервера правит число без пересборки.
+// Источник значений — gamedata CS2Fixes, ключ "GameEntitySystem".
+struct GamedataSettings {
+    int32_t entitySystemOffsetLinux = 80;
+    int32_t entitySystemOffsetWindows = 88;
+};
+
 struct Config {
     bool debug = false;
     int32_t serverId = 1;
@@ -84,6 +100,7 @@ struct Config {
     CollectSettings collect;
     StorageSettings storage;
     CommandsSettings commands;
+    GamedataSettings gamedata;
 
     // ключ -> язык -> текст
     std::map<std::string, std::map<std::string, std::string> > messages;
@@ -140,6 +157,7 @@ std::string ChooseConfigDirectory(const std::string& gameDirectory, ILogger* log
 // Текст файлов по умолчанию — вынесены, чтобы их проверял тест.
 std::string DefaultSettingsJson();
 std::string DefaultMessagesJson();
+std::string DefaultGamedataJson();
 std::string SettingsSchemaJson();
 std::string MessagesSchemaJson();
 std::string ReadmeText();

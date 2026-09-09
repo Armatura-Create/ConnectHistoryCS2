@@ -28,14 +28,16 @@ different plugins on different servers and build a single report.
 |---|---|---|---|
 | **CounterStrikeSharp** | CSSharp ≥ 1.0.369 (hence Metamod:Source) | `ConnectHistory_cssharp_<version>.zip` | `addons/counterstrikesharp/plugins/ConnectHistory/` |
 | **SwiftlyS2** | SwiftlyS2 ≥ 1.4.9, Metamod **not needed** | `ConnectHistory_swiftly_<version>.zip` | `addons/swiftlys2/plugins/ConnectHistory/` |
-| **Metamod:Source** | Metamod:Source ≥ 2.0.0-git1460; match stats need [Utils by Pisex](https://github.com/Pisex/cs2-menus) | `ConnectHistory_metamod_{linux,windows}_<version>.zip` | `addons/ConnectHistory/` |
+| **Metamod:Source** | Metamod:Source ≥ 2.0.0-git1460, nothing else | `ConnectHistory_metamod_{linux,windows}_<version>.zip` | `addons/ConnectHistory/` |
 
-The native target records the connection history and ping on its own. Match results
-(kills, deaths, score, rounds, team) come from the player controller, and the pointer
-needed to reach it lives in the [Utils plugin by Pisex](https://github.com/Pisex/cs2-menus) — the same one
-`cs2-lvl_ranks`, `cs2-vip` and the rest of that family use. With it installed the native
-target collects everything the C# targets do; without it those columns stay `0`/`NULL`.
-Details in [Differences between targets](docs/DATABASE.md#differences-between-targets).
+The native target collects everything the C# targets do, with no other plugin
+required. Match results are read from the player controller, and reaching it needs
+exactly **one** game-version-dependent number — the offset of the entity system
+inside `IGameResourceService`. It lives in `gamedata.json` next to the other configs,
+is never overwritten by the plugin, and is edited without a rebuild when a CS2 update
+moves it (take the new value from CS2Fixes gamedata, key `GameEntitySystem`). Nothing
+else in the plugin depends on the game version. Details in
+[Differences between targets](docs/DATABASE.md#differences-between-targets).
 
 ## Features
 
@@ -147,6 +149,7 @@ platforms unchanged.
 | `Messages.json` | texts for player commands, per language |
 | `*.schema.json` | JSON Schema, regenerated on every load |
 | `README.txt` | short reference, regenerated on every load |
+| `gamedata.json` | native target only: the one game-version-dependent offset; never overwritten |
 
 Key options:
 

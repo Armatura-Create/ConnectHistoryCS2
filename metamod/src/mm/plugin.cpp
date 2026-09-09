@@ -10,13 +10,11 @@
 #include "core/util/timeutil.h"
 #include "mm/globals.h"
 #include "mm/stats.h"
-#include "mm/utils_api.h"
 #include "mm/version.h"
 
 #include <eiface.h>
 #include <engine/igameeventsystem.h>
 #include <icvar.h>
-#include <igameevents.h>
 #include <inetchannelinfo.h>
 #include <iserver.h>
 #include <networksystem/inetworkmessages.h>
@@ -34,7 +32,8 @@ ISource2Server* g_server = nullptr;
 IGameEventSystem* g_gameEventSystem = nullptr;
 INetworkMessages* g_networkMessages = nullptr;
 ISchemaSystem* g_schemaSystem = nullptr;
-pisex::IUtilsApi* g_utils = nullptr;
+IGameResourceService* g_gameResourceService = nullptr;
+int32_t g_entitySystemOffset = 0;
 IServerGameClients* g_gameClients = nullptr;
 
 ConnectHistoryPlugin g_plugin;
@@ -144,6 +143,8 @@ bool ConnectHistoryPlugin::Load(PluginId id, ISmmAPI* ismm, char* error, size_t 
                     NETWORKMESSAGES_INTERFACE_VERSION);
     GET_V_IFACE_ANY(GetEngineFactory, g_schemaSystem, ISchemaSystem,
                     SCHEMASYSTEM_INTERFACE_VERSION);
+    GET_V_IFACE_CURRENT(GetEngineFactory, g_gameResourceService, IGameResourceService,
+                        GAMERESOURCESERVICESERVER_INTERFACE_VERSION);
 
     // Нужно, чтобы приходили события IMetamodListener (в том числе OnLevelInit)
     g_SMAPI->AddListener(this, this);
@@ -211,9 +212,6 @@ bool ConnectHistoryPlugin::Unload(char* error, size_t maxlen) {
     _hookClientDisconnect.Remove(g_gameClients);
     _hookDispatchConCommand.Remove(g_pCVar);
 
-    // Колбэки событий указывают внутрь этой библиотеки — снять до выгрузки
-    if (g_utils != nullptr) g_utils->ClearAllHooks(g_PLID);
-
     // Открытые сессии закрываем явно: иначе выгрузка плагина оставляет их
     // висеть в базе, и «кто сейчас онлайн» врёт до следующего старта.
     CloseAllSessions(SessionEndKind::PluginUnload);
@@ -236,6 +234,13 @@ void ConnectHistoryPlugin::ReloadConfig() {
 
     ConfigService service(_logger.get());
     _config = service.LoadOrCreate(_configDirectory);
+
+#ifdef _WIN32
+    g_entitySystemOffset = _config.gamedata.entitySystemOffsetWindows;
+#else
+    g_entitySystemOffset = _config.gamedata.entitySystemOffsetLinux;
+#endif
+    stats::ForgetMap();
     _displayOffsetSeconds =
         ResolveDisplayOffsetSeconds(_config.displayTimeZone, _logger.get());
 }
@@ -269,6 +274,10 @@ void ConnectHistoryPlugin::OnLevelInit(const char* mapName, const char* mapEntit
     // Смена карты — граница сессии: так в данных остаётся, СКОЛЬКО игрок провёл
     // на конкретной карте, а не размазанное по нескольким картам время.
     CloseAllSessions(SessionEndKind::MapChange);
+
+    // Указатель на gamerules и счётчик раундов принадлежат карте
+    stats::ForgetMap();
+    _lastRoundsPlayed = -1;
     RegisterServer();
 }
 
@@ -373,6 +382,11 @@ KHook::Return<void> ConnectHistoryPlugin::Hook_GameFrame(IServerGameDLL*, bool s
     if (_config.collect.ping && now >= _nextPingAt) {
         _nextPingAt = now + std::max(5, _config.collect.pingSampleIntervalSeconds);
         SamplePings();
+    }
+
+    if (_config.collect.matchStats && now >= _nextPollAt) {
+        _nextPollAt = now + 1;
+        PollMatchState(now);
     }
 
     return {KHook::Action::Ignore};
@@ -594,45 +608,36 @@ std::string ConnectHistoryPlugin::ReadConVar(const char* name) const {
     return text != nullptr ? std::string(text) : std::string();
 }
 
-// Utils от Pisex — если стоит. Ищем только здесь: раньше AllPluginsLoaded он
-// мог быть ещё не загружен, и плагин навсегда решил бы, что его нет.
-void ConnectHistoryPlugin::AllPluginsLoaded() {
-    int ret = 0;
-    g_utils = static_cast<pisex::IUtilsApi*>(
-        g_SMAPI->MetaFactory(pisex::kUtilsInterface, &ret, nullptr));
-
-    if (g_utils == nullptr) {
-        _logger->Info("[Plugin] Utils (Pisex/cs2-menus) не найден: история подключений "
-                      "и пинг пишутся полностью, итоги матча останутся нулями");
-        return;
+// Опрос состояния матча. Главный поток — иначе это чтение чужой памяти.
+void ConnectHistoryPlugin::PollMatchState(int64_t now) {
+    // Раунды: по счётчику gamerules, а не по событию — события без сигнатур
+    // недоступны, а число это игра ведёт сама. Считаем то, что игрок застал
+    // в ЭТОЙ сессии: дельту от последнего виденного значения.
+    int32_t rounds = 0;
+    if (stats::ReadRoundsPlayed(&rounds)) {
+        if (_lastRoundsPlayed >= 0 && rounds > _lastRoundsPlayed) {
+            const int32_t finished = rounds - _lastRoundsPlayed;
+            _sessions.ForEach([finished](OpenSession& session) {
+                for (int32_t i = 0; i < finished; ++i) session.NoteRoundEnd();
+            });
+        }
+        // Уменьшение — рестарт матча: просто новая точка отсчёта
+        _lastRoundsPlayed = rounds;
     }
 
-    // Только то, чего не снять с контроллера при выходе. Убийства, смерти и
-    // остальное берутся оттуда — ровно как в целях на C#.
-    g_utils->HookEvent(g_PLID, "round_end",
-                       [](const char*, IGameEvent*, bool) { g_plugin.OnRoundEnd(); });
-    g_utils->HookEvent(g_PLID, "player_team",
-                       [](const char*, IGameEvent* event, bool) { g_plugin.OnPlayerTeam(event); });
+    // Команда: NoteTeam сама отбрасывает повтор той же команды, так что опрос
+    // не накручивает team_changes. Первая увиденная команда — начальное
+    // состояние, а не смена, как и у события player_team.
+    for (const auto& entry : _slots) {
+        if (entry.second.fake || entry.second.steamId == 0) continue;
 
-    _logger->Info("[Plugin] Utils найден: итоги матча собираются");
-}
+        int32_t team = 0;
+        if (!stats::ReadTeam(entry.first, &team)) continue;
 
-// Раунды считаем событием, а не с контроллера: нужно то, что игрок застал
-// в ЭТОЙ сессии, а поля контроллера обнуляются сменой карты.
-void ConnectHistoryPlugin::OnRoundEnd() {
-    _sessions.ForEach([](OpenSession& session) { session.NoteRoundEnd(); });
-}
-
-void ConnectHistoryPlugin::OnPlayerTeam(IGameEvent* event) {
-    if (event == nullptr || event->GetBool("isbot", false)) return;
-
-    const CPlayerSlot slot = event->GetPlayerSlot("userid");
-    const uint64_t steamId = SteamIdForSlot(slot.IsValid() ? slot.Get() : -1);
-    if (steamId == 0) return;
-
-    const int team = event->GetInt("team", 0);
-    const int64_t now = UtcNowSeconds();
-    _sessions.Update(steamId, [team, now](OpenSession& session) { session.NoteTeam(team, now); });
+        _sessions.Update(entry.second.steamId, [team, now](OpenSession& session) {
+            session.NoteTeam(team, now);
+        });
+    }
 }
 
 int ConnectHistoryPlugin::SlotForSteamId(uint64_t steamId) const {

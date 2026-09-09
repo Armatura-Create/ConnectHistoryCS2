@@ -7,6 +7,7 @@
 
 #include "doctest.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -361,4 +362,51 @@ TEST_CASE("Новый путь выигрывает, когда старого �
 
     CHECK(Exists(chosen + "/Settings.json"));
     CHECK(chosen == game.Path() + "/addons/configs/ConnectHistory");
+}
+
+// --- gamedata.json: единственные числа, зависящие от версии игры ---
+
+TEST_CASE("Первый запуск создаёт gamedata.json со смещениями по умолчанию") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    const ch::Config config = service.LoadOrCreate(dir.Path());
+
+    CHECK(Exists(dir.File("gamedata.json")));
+    CHECK(config.gamedata.entitySystemOffsetLinux == 80);
+    CHECK(config.gamedata.entitySystemOffsetWindows == 88);
+}
+
+TEST_CASE("Смещения читаются из gamedata.json и файл не перезаписывается") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    // Файл с комментарием, как его напишет человек после обновления игры
+    const std::string edited =
+        "{ // после обновления 2026-10-01\n  \"GameEntitySystem\": { \"linux\": 96, \"windows\": 104 } }";
+    Write(dir.File("gamedata.json"), edited);
+
+    const ch::Config config = service.LoadOrCreate(dir.Path());
+
+    CHECK(config.gamedata.entitySystemOffsetLinux == 96);
+    CHECK(config.gamedata.entitySystemOffsetWindows == 104);
+    CHECK(Read(dir.File("gamedata.json")) == edited);
+}
+
+TEST_CASE("Битый gamedata.json оставляет смещения по умолчанию и не перезаписывается") {
+    TempDir dir;
+    ch::NullLogger logger;
+    ch::ConfigService service(&logger);
+
+    Write(dir.File("gamedata.json"), "{ \"GameEntitySystem\": { \"linux\": 96, }");  // }
+    const std::string broken = Read(dir.File("gamedata.json"));
+
+    const ch::Config config = service.LoadOrCreate(dir.Path());
+
+    CHECK(config.gamedata.entitySystemOffsetLinux == 80);
+    CHECK(Read(dir.File("gamedata.json")) == broken);
+    CHECK(std::find(service.FailedFiles().begin(), service.FailedFiles().end(),
+                    "gamedata.json") != service.FailedFiles().end());
 }

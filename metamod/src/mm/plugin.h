@@ -10,10 +10,12 @@
 //
 // Итоги матча — единственное, чему это правило мешало: счёт и статистика
 // живут в полях контроллера, а до контроллера нужен указатель на CEntitySystem,
-// которого ни одна фабрика не отдаёт. Его (и игровые события) плагин берёт
-// у Utils от Pisex — см. mm/utils_api.h. Смещение живёт там, а не здесь; без
-// Utils плагин работает как прежде, только итоги остаются нулями. Сами поля
-// читаются по именам через ISchemaSystem — это схема игры, не gamedata.
+// которого ни одна фабрика не отдаёт. Он лежит внутри IGameResourceService по
+// смещению — и это ЕДИНСТВЕННОЕ число в плагине, зависящее от версии игры.
+// Живёт оно в gamedata.json, правится без пересборки (см. mm/stats.cpp).
+// Сами поля читаются по именам через ISchemaSystem — это схема игры, не gamedata.
+// Игровые события не нужны: смена команды ловится опросом контроллера раз
+// в секунду, раунды — по счётчику gamerules.
 //
 // История подключений — то, ради чего плагин существует, — ни от чего из этого
 // не зависит: вход, выход, время, карта, страна, пинг и «кто сейчас онлайн»
@@ -41,7 +43,6 @@
 #include <string>
 #include <unordered_map>
 
-class IGameEvent;
 
 // g_SMAPI, g_PLAPI, g_PLID и указатель KHook. Объявить их обязан КАЖДЫЙ файл
 // цели: META_CONPRINTF и хуки KHook — макросы и шаблоны поверх этих указателей,
@@ -62,9 +63,6 @@ public:
 
     bool Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool late) override;
     bool Unload(char* error, size_t maxlen) override;
-
-    // Здесь ищем Utils: другие плагины гарантированно загружены только тут.
-    void AllPluginsLoaded() override;
 
     const char* GetAuthor() override { return "Armatura"; }
     const char* GetName() override { return "ConnectHistory"; }
@@ -103,10 +101,6 @@ public:
                                                 const CCommandContext& context,
                                                 const CCommand& args);
 
-    // Игровые события от Utils (см. AllPluginsLoaded). Только те два, что
-    // нельзя снять с контроллера при выходе: раунды и смена команды.
-    void OnRoundEnd();
-    void OnPlayerTeam(IGameEvent* event);
 
     // Команды (см. commands.cpp)
     void CommandStatus();
@@ -152,6 +146,11 @@ private:
 
     void SamplePings();
 
+    // Раз в секунду: смена команды у каждой сессии и счётчик раундов gamerules.
+    // Заменяет события player_team и round_end, до которых без сигнатур
+    // не добраться. Секунда — точность spectator_seconds; дороже не нужно.
+    void PollMatchState(int64_t now);
+
     // Что известно про слот между OnClientConnected и ClientPutInServer.
     // Ключуется по слоту сознательно и живёт ровно до открытия сессии: сама
     // сессия хранится по SteamID, потому что слот движок переиспользует.
@@ -193,6 +192,9 @@ private:
 
     int64_t _nextSnapshotAt = 0;
     int64_t _nextPingAt = 0;
+    int64_t _nextPollAt = 0;
+    // Последний виденный m_totalRoundsPlayed; -1 — карта ещё не читалась
+    int32_t _lastRoundsPlayed = -1;
     int64_t _registerServerAt = 0;
     bool _serverRegistered = false;
     bool _loaded = false;

@@ -118,6 +118,28 @@ std::string DefaultMessagesJson() {
         "}\n";
 }
 
+// Смещения, зависящие от версии игры. Отдельный файл, а не секция Settings.json:
+// у них другая жизнь — их правят после обновления игры, а не при настройке.
+std::string DefaultGamedataJson() {
+    return
+        "{\n"
+        "  // ЕДИНСТВЕННОЕ место в плагине с числами, зависящими от версии игры.\n"
+        "  //\n"
+        "  // Указатель на систему сущностей лежит внутри IGameResourceService по этому\n"
+        "  // смещению; движок его не отдаёт никак иначе. Без него не прочитать поля\n"
+        "  // контроллера игрока: счёт, убийства, смерти, команду.\n"
+        "  //\n"
+        "  // Если после обновления CS2 итоги матча стали нулями, а в консоли\n"
+        "  // [Gamedata] жалуется на смещение — возьмите свежее значение из gamedata\n"
+        "  // CS2Fixes (ключ \"GameEntitySystem\") и перезапустите сервер.\n"
+        "  // Файл никогда не перезаписывается плагином.\n"
+        "  \"GameEntitySystem\": {\n"
+        "    \"linux\": 80,\n"
+        "    \"windows\": 88\n"
+        "  }\n"
+        "}\n";
+}
+
 std::string SettingsSchemaJson() {
     return
         "{\n"
@@ -252,6 +274,11 @@ std::string ReadmeText() {
         "                           are NOT supported - see the metamod target README.\n"
         "                           The database is ALWAYS UTC.\n"
         "  Database.TablePrefix   - table prefix, ch_ by default\n"
+        "  gamedata.json          - the ONE game-version-dependent number: the offset of\n"
+        "                           the entity system inside IGameResourceService. Match\n"
+        "                           results (score, kills, deaths, team) need it. After a CS2\n"
+        "                           update that moves it, take the new value from CS2Fixes\n"
+        "                           gamedata (key GameEntitySystem). Never overwritten.\n"
         "  Server.PublicAddress   - public server address, \"ip:port\" or \"host:port\".\n"
         "                           The server process does not know its own public address:\n"
         "                           ConVar ip is the socket bind address, usually 0.0.0.0.\n"
