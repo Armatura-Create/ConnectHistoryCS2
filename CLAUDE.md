@@ -101,6 +101,14 @@ deliberate exception — it is the Russian translation of the user-facing README
   still load a plugin built against a newer header. A method inserted in the **middle** of
   `IKHook` would shift every later slot and raise the minimum; re-check the class order in
   `khook.hpp` whenever Metamod bumps the submodule.
+- **Symbols from the vendored static archives are hidden at link time**
+  (`-Wl,--exclude-libs,libmariadbclient.a:libprotobuf.a` in `AMBuildScript`).
+  `-fvisibility=hidden` covers only our own objects; a second protobuf or libmariadb inside
+  a neighbouring plugin would interpose with ours, and the crash lands in whichever plugin
+  loaded second. **Never `--exclude-libs,ALL`**: with the SDK, `PLUGIN_EXPOSE` expands to
+  `EXPOSE_SINGLE_INTERFACE_GLOBALVAR`, and `CreateInterface` — the one symbol Metamod looks
+  up — comes from the SDK's static tier1. `ALL` hid it; the build and every release check
+  passed, and v3.1.2 did not load on Linux. Both workflows now verify the export.
 - **Chat and ping need no offsets.** The reply goes out as a `CUserMessageSayText2`
   allocated by `INetworkMessageInternal` and posted through `IGameEventSystem`; the chat is
   heard by hooking `ICvar::DispatchConCommand` (`say` / `say_team`); `ping_*` comes from
