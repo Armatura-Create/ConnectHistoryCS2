@@ -479,11 +479,13 @@ jobs:
             # EXPOSE_SINGLE_INTERFACE_GLOBALVAR), и неосторожный --exclude-libs
             # прячет его: сборка проходит, архив собирается, плагин не грузится
             # (так вышел v3.1.2). nm читает ELF; objdump на Ubuntu умеет и PE.
+            # Через файл, не через pipe: см. listing.txt выше — grep -q под
+            # pipefail валит конвейер именно на успешном совпадении.
             case "$slug" in
-              linux)   exports=$(nm -D --defined-only plugin.bin) ;;
-              windows) exports=$(objdump -p plugin.bin) ;;
+              linux)   nm -D --defined-only plugin.bin > exports.txt ;;
+              windows) objdump -p plugin.bin > exports.txt ;;
             esac
-            if ! echo "$exports" | grep -q -w CreateInterface; then
+            if ! grep -q -w CreateInterface exports.txt; then
               echo "::error::$binary архива $slug не экспортирует CreateInterface"
               exit 1
             fi
