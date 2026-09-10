@@ -464,6 +464,14 @@ const char *PLUGIN_FULL_VERSION   = \"{version}\";
       elif cxx.family == 'clang':
         cxx.linkflags += ['-lgcc_eh']
       cxx.linkflags += ['-static-libstdc++']
+      # Symbols pulled in from static archives (MariaDB client, protobuf, tier1)
+      # keep their default visibility: -fvisibility=hidden only covers our own
+      # objects. Left exported, they interpose with the copies inside other
+      # plugins on the same server - another protobuf, another libmariadb - and
+      # the crash lands in whichever plugin loaded second. Metamod:Source hides
+      # its own statically linked symbols the same way (a8c72eaf, #282).
+      # CreateInterface stays exported: it is DLL_EXPORT in our own object.
+      cxx.linkflags += ['-Wl,--exclude-libs,ALL']
     elif cxx.target.platform == 'windows':
       cxx.defines += ['WIN32', '_WINDOWS']
 

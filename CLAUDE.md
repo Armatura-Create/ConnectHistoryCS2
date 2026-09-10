@@ -94,7 +94,13 @@ deliberate exception — it is the Russian translation of the user-facing README
   Metamod:Source **2.0.0-git1460 or newer** and does not load on older builds. Hooks are
   `KHook::Virtual<>` members bound to methods in the constructor and attached in `Load`
   (`Add`) / detached in `Unload` (`Remove`); handlers return `KHook::Return<T>` with
-  `Action::Ignore` or `Action::Supersede`.
+  `Action::Ignore` or `Action::Supersede`. The plugin-side `IKHook` (from `khook.hpp` in
+  the Metamod checkout CI builds against) may carry more virtuals than the server's Metamod
+  implements — KHook appended `WasOriginalFunctionSkipped` as the **last** slot on
+  2026-09-08 and nothing in the `Virtual<>` machinery calls it, which is why git1460/1461
+  still load a plugin built against a newer header. A method inserted in the **middle** of
+  `IKHook` would shift every later slot and raise the minimum; re-check the class order in
+  `khook.hpp` whenever Metamod bumps the submodule.
 - **Chat and ping need no offsets.** The reply goes out as a `CUserMessageSayText2`
   allocated by `INetworkMessageInternal` and posted through `IGameEventSystem`; the chat is
   heard by hooking `ICvar::DispatchConCommand` (`say` / `say_team`); `ping_*` comes from
