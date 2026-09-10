@@ -212,6 +212,20 @@ jobs:
               done
           exit "$status"
 
+      # Metamod finds the plugin through dlsym("CreateInterface"). On Linux the
+      # symbol comes from the SDK's static tier1 (PLUGIN_EXPOSE expands to
+      # EXPOSE_SINGLE_INTERFACE_GLOBALVAR), so a careless --exclude-libs hides
+      # it: the build passes, the package builds, the plugin does not load
+      # (that is how v3.1.2 shipped). The Windows export is checked by the
+      # release workflow: objdump on Ubuntu reads PE, dumpbin is not on PATH here.
+      - name: Plugin exports CreateInterface
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: ConnectHistory/metamod
+        run: |
+          so=build/package/cs2/addons/ConnectHistory/bin/linuxsteamrt64/ConnectHistory.so
+          nm -D --defined-only "$so" | grep -w CreateInterface \
+            || { echo "::error::$so does not export CreateInterface - Metamod cannot load it"; exit 1; }
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

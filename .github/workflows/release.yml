@@ -474,6 +474,19 @@ jobs:
               echo "::error::в $binary архива $slug остался фолбэк 0.0.0-dev"
               exit 1
             fi
+            # Metamod находит плагин через dlsym("CreateInterface"). Под Linux
+            # символ приходит из статического tier1 SDK (PLUGIN_EXPOSE ->
+            # EXPOSE_SINGLE_INTERFACE_GLOBALVAR), и неосторожный --exclude-libs
+            # прячет его: сборка проходит, архив собирается, плагин не грузится
+            # (так вышел v3.1.2). nm читает ELF; objdump на Ubuntu умеет и PE.
+            case "$slug" in
+              linux)   exports=$(nm -D --defined-only plugin.bin) ;;
+              windows) exports=$(objdump -p plugin.bin) ;;
+            esac
+            if ! echo "$exports" | grep -q -w CreateInterface; then
+              echo "::error::$binary архива $slug не экспортирует CreateInterface"
+              exit 1
+            fi
             rm -f plugin.bin
 
             # Шаблон конфига едет в релиз намеренно, но ТОЛЬКО с пустым паролем
