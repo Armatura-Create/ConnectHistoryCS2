@@ -100,7 +100,14 @@ deliberate exception — it is the Russian translation of the user-facing README
   2026-09-08 and nothing in the `Virtual<>` machinery calls it, which is why git1460/1461
   still load a plugin built against a newer header. A method inserted in the **middle** of
   `IKHook` would shift every later slot and raise the minimum; re-check the class order in
-  `khook.hpp` whenever Metamod bumps the submodule.
+  `khook.hpp` whenever Metamod bumps the submodule. **Re-check the signatures too**: on
+  2026-09-10 (git1467, `7e24ce9e`) `RemoveHook` grew `hook_removal_fn` and `context` in the
+  same slot, and the core calls `hook_removal_fn` when it is non-null. v3.1.3, built against
+  git1466, passes two arguments, so the core reads whatever sits in the registers and calls
+  it — from `~Virtual()`, i.e. on unload and at shutdown. Adding trailing arguments is
+  harmless in the other direction (a new build on an older core; x64 callers clean up), so
+  the minimum stays, but **a Metamod change like this means cutting a release**: the fix is
+  the rebuild, and nothing fails until a server unloads the plugin.
 - **Symbols from the vendored static archives are hidden at link time**
   (`-Wl,--exclude-libs,libmariadbclient.a:libprotobuf.a` in `AMBuildScript`).
   `-fvisibility=hidden` covers only our own objects; a second protobuf or libmariadb inside
