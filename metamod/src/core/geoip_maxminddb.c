@@ -35,7 +35,7 @@
 /* MMDB_lib_version() отдаёт эту строку. Обычно её подставляет autotools/CMake;
    мы собираем библиотеку одним файлом, поэтому берём версию сабмодуля явно.
    Разъедется при обновлении вендора — поднять здесь. */
-#define PACKAGE_VERSION "1.13.3"
+#define PACKAGE_VERSION "1.14.1"
 
 /* Сама библиотека */
 #include "maxminddb.c"
@@ -150,7 +150,8 @@ int ch_mmdb_open_memory(const char *const filename, MMDB_s *const mmdb) {
 
             data_section_size =
                 mmdb->file_size - search_tree_size - MMDB_DATA_SECTION_SEPARATOR;
-            if (data_section_size > UINT32_MAX || data_section_size <= 0) {
+            if (data_section_size <= 0 ||
+                (uint64_t)data_section_size > UINT32_MAX) {
                 status = MMDB_INVALID_METADATA_ERROR;
                 goto cleanup;
             }
