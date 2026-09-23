@@ -186,6 +186,14 @@ such a check must never be made required in branch protection.
 The Linux MM:S binary is built **only** in the Steam Runtime 3 container: that is the ABI a
 CS2 dedicated server uses, and a binary from a plain ubuntu runner will not load.
 
+GeoLite2 is refreshed at release time from `MAXMIND_LICENSE_KEY`, a secret of the
+**`RELEASE` environment** — only `cssharp`, `swiftly` and `metamod-package` declare it, so
+CI never sees the key. The C# jobs download through MSBuild (`DownloadGeoLite2`); the native
+archives get theirs in the `Refresh GeoLite2` step, because `PackageScript` copies the
+committed `GeoIP/`. Any job that packs `.mmdb` must refresh it too, or archives from one tag
+carry databases of different ages and countries in the shared database drift by target.
+Without the key, every archive falls back to the committed copies.
+
 Analyzers (`EnableNETAnalyzers` + `AnalysisMode=Recommended`) are always on and the build
 holds at zero warnings; `CA1716` and `CA1859` are silenced deliberately in `.csproj`. The
 C++ core builds with `-Wall -Wextra -Wpedantic -Werror`.

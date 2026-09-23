@@ -37,6 +37,9 @@ jobs:
   cssharp:
     needs: version
     runs-on: ubuntu-latest
+    # MAXMIND_LICENSE_KEY - секрет окружения: его видят только джобы, которые
+    # кладут GeoLite2 в архив, CI-воркфлоу до него не дотягиваются.
+    environment: RELEASE
     env:
       PLUGIN_VERSION: ${{ needs.version.outputs.version }}
 
@@ -132,6 +135,9 @@ jobs:
   swiftly:
     needs: version
     runs-on: ubuntu-latest
+    # MAXMIND_LICENSE_KEY - секрет окружения: его видят только джобы, которые
+    # кладут GeoLite2 в архив, CI-воркфлоу до него не дотягиваются.
+    environment: RELEASE
     env:
       PLUGIN_VERSION: ${{ needs.version.outputs.version }}
 
@@ -386,6 +392,7 @@ jobs:
   metamod-package:
     needs: [version, metamod-build]
     runs-on: ubuntu-latest
+    environment: RELEASE
     env:
       PLUGIN_VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -398,6 +405,34 @@ jobs:
         with:
           name: metamod-configs
           path: configs-default
+
+      # PackageScript кладёт в дерево закоммиченные копии из GeoIP/. Без этого шага
+      # архивы C# (их MSBuild качает базы сам) и нативные архивы одного тега несли бы
+      # базы разного возраста - и страны в общей БД расходились бы по серверам.
+      # Сбой скачивания, как и в C#, не валит релиз, но виден предупреждением.
+      - name: Refresh GeoLite2
+        env:
+          MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MAXMIND_LICENSE_KEY" ]; then
+            echo "GeoLite2 auto-download skipped: set MAXMIND_LICENSE_KEY to refresh the databases during build"
+            exit 0
+          fi
+          for edition in GeoLite2-Country GeoLite2-City; do
+            if curl -fsSL -o "$edition.tar.gz" \
+                 "https://download.maxmind.com/app/geoip_download?edition_id=$edition&license_key=$MAXMIND_LICENSE_KEY&suffix=tar.gz" \
+               && mkdir -p "geo/$edition" \
+               && tar -xzf "$edition.tar.gz" -C "geo/$edition" --strip-components=1 \
+               && test -s "geo/$edition/$edition.mmdb"; then
+              for tree in trees/metamod-tree-*; do
+                cp "geo/$edition/$edition.mmdb" "$tree/addons/ConnectHistory/$edition.mmdb"
+              done
+              echo "GeoLite2 auto-download: $edition refreshed"
+            else
+              echo "::warning::$edition download failed, the archive keeps the committed copy from GeoIP/"
+            fi
+          done
 
       - name: Zip per OS
         run: |
