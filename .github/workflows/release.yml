@@ -57,9 +57,9 @@ jobs:
           --health-retries=20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -126,7 +126,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-cssharp
           path: cssharp/bin/Release/net10.0/ConnectHistory_cssharp_${{ needs.version.outputs.version }}.zip
@@ -155,9 +155,9 @@ jobs:
           --health-retries=20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -225,7 +225,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-swiftly
           path: swiftly/bin/Release/net10.0/ConnectHistory_swiftly_${{ needs.version.outputs.version }}.zip
@@ -237,7 +237,7 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -258,7 +258,7 @@ jobs:
           ./build-tests/dump_defaults configs-default
           ls -la configs-default
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: metamod-configs
           path: metamod/configs-default
@@ -283,25 +283,25 @@ jobs:
       PLUGIN_VERSION: ${{ needs.version.outputs.version }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: ConnectHistory
           submodules: recursive
           fetch-depth: 0
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: alliedmodders/hl2sdk
           ref: cs2
           path: ConnectHistory/metamod/sdk
           submodules: recursive
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: alliedmodders/hl2sdk-manifests
           path: ConnectHistory/metamod/hl2sdk-manifests
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: alliedmodders/metamod-source
           ref: master
@@ -309,7 +309,7 @@ jobs:
           submodules: recursive
 
       # AMBuild ships inside the SteamRT3 image; only the Windows runner needs it.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: matrix.os == 'windows-latest'
         with:
           repository: alliedmodders/ambuild
@@ -381,7 +381,7 @@ jobs:
           python ../configure.py --enable-optimize --sdks cs2
           ambuild
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: metamod-tree-${{ matrix.slug }}
           path: ConnectHistory/metamod/build/package/cs2
@@ -396,12 +396,12 @@ jobs:
     env:
       PLUGIN_VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: trees
           pattern: metamod-tree-*
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: metamod-configs
           path: configs-default
@@ -536,7 +536,7 @@ jobs:
 
           ls -la ConnectHistory_metamod_*.zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-metamod
           path: ConnectHistory_metamod_*_${{ needs.version.outputs.version }}.zip
@@ -551,11 +551,11 @@ jobs:
     steps:
       # Полная история и теги: описание релиза собирается из коммитов между
       # предыдущим тегом и этим.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: release-*
@@ -671,7 +671,7 @@ jobs:
           cat release-notes.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.version.outputs.tag }}
           name: ${{ needs.version.outputs.tag }}

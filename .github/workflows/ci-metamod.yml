@@ -24,7 +24,7 @@ jobs:
     name: Core (tests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -94,7 +94,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: ConnectHistory
           submodules: recursive
@@ -103,7 +103,7 @@ jobs:
       # hl2sdk and the manifests come from checkout rather than a submodule: a
       # submodule would drag gigabytes of SDK history into this repository forever.
       - name: Checkout hl2sdk (cs2)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: alliedmodders/hl2sdk
           ref: cs2
@@ -111,13 +111,13 @@ jobs:
           submodules: recursive
 
       - name: Checkout hl2sdk-manifests
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: alliedmodders/hl2sdk-manifests
           path: ConnectHistory/metamod/hl2sdk-manifests
 
       - name: Checkout Metamod:Source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: alliedmodders/metamod-source
           ref: master
@@ -128,7 +128,7 @@ jobs:
       # Installing it unconditionally fails there - that python has no pip at all.
       - name: Checkout AMBuild
         if: matrix.os == 'windows-latest'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: alliedmodders/ambuild
           path: ambuild
@@ -227,7 +227,7 @@ jobs:
             || { echo "::error::$so does not export CreateInterface - Metamod cannot load it"; exit 1; }
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: metamod-${{ matrix.os == 'windows-latest' && 'windows' || 'linux' }}
           path: ConnectHistory/metamod/build/package/cs2
