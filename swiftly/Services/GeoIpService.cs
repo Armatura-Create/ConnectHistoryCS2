@@ -112,6 +112,10 @@ public sealed class GeoIpService : IDisposable
             // в логе. Реальный инцидент в NotifyMessages при полностью целом файле.
             // Цена режима Memory — RAM размером с базу; ошибка чтения становится обычным
             // исключением.
+            //
+            // That is also why MaxMind.GeoIP2 stays on 5.x: from 6.0 (MaxMind.Db 5.0) Memory
+            // is an anonymous mmap backed by /dev/shm, which Docker caps at 64 MB - the same
+            // SIGBUS, now while loading City. GeoIpDatabaseTests holds the line.
             var reader = new DatabaseReader(path, FileAccessMode.Memory);
             _logger.Info($"[GEO] {fileName} загружена в память ({size} байт)");
             return reader;

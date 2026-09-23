@@ -65,4 +65,16 @@ public class GeoIpDatabaseTests
         Assert.Null(info.Iso);
         Assert.Null(info.City);
     }
+
+    [Fact]
+    public void MemoryModeStillMeansAByteArray()
+    {
+        // MaxMind.Db 5.0 (MaxMind.GeoIP2 6.0) moved FileAccessMode.Memory to an anonymous
+        // mmap: inside a container that is a 64 MB /dev/shm, and City kills the process with
+        // SIGBUS - exactly what Memory mode is here to prevent. A "bump to latest" compiles
+        // without a word; only this test notices.
+        var readerVersion = typeof(MaxMind.Db.Reader).Assembly.GetName().Version!;
+        Assert.True(readerVersion.Major < 5,
+            $"MaxMind.Db {readerVersion}: Memory mode is no longer a byte[]; keep MaxMind.GeoIP2 on 5.x");
+    }
 }

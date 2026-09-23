@@ -33,7 +33,7 @@ deliberate exception — it is the Russian translation of the user-facing README
 
 - `net10.0`, namespace `ConnectHistory`, `[MinimumApiVersion(369)]`
 - Dependencies: `CounterStrikeSharp.API` `1.0.369` (pinned, not `*`), `MySqlConnector`
-  `2.6.2`, `MaxMind.GeoIP2` `5.3.0`
+  `2.6.2`, `MaxMind.GeoIP2` `5.4.1` (held on 5.x — see the `FileAccessMode.Memory` invariant)
 - **Build against the MINIMUM supported CSSharp version, not the newest.** Then the
   compiler itself proves that no API from a newer build is used, and the plugin loads on
   any server running 1.0.369+. The package version in `.csproj` and `[MinimumApiVersion]`
@@ -342,6 +342,9 @@ Change an invariant, change it everywhere.
   `MemoryMapped` reads `.mmdb` through page faults; inside a game process on overlayfs that
   becomes a SIGBUS and kills the process instantly — no exception, no stack, no log line.
   The cost of `Memory` is RAM the size of the database (Country ~9 MB, City ~60 MB).
+  **`MaxMind.GeoIP2` stays on 5.x**: 6.0 (via `MaxMind.Db` 5.0) turned `Memory` into an
+  anonymous mmap backed by `/dev/shm`, which Docker caps at 64 MB — City brings the SIGBUS
+  back. `GeoIpDatabaseTests.MemoryModeStillMeansAByteArray` fails on such a bump.
 - **Time is `DateTime.UtcNow` everywhere.** A server with a local time zone would otherwise
   write mixed timestamps and every hourly report would lie. The convention is not held by a
   comment: the connection string carries `DateTimeKind=Utc`, so writing a `Kind=Local` value
